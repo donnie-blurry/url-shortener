@@ -1,10 +1,10 @@
-const urlObjects = [];
+import db from './datastore.js';
 
 export function getById (id) {
-  return urlObjects.find(element => element.id === id);
+  return db.get(id);
 }
 
 export function store (urlObject) {
-  urlObjects.push(urlObject);
+  db.set(urlObject.id, urlObject);
   return urlObject;
 }

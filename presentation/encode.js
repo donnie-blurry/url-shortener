@@ -2,7 +2,7 @@ import validator from 'validator';
 import shortener from '../application/encode.js';
 
 export default (req, res) => {
-  const { url } = req.body;
+  const {url} = req.body;
   if (!url) {
     return res
       .status(400)
@@ -12,7 +12,7 @@ export default (req, res) => {
   }
   if (!validator.isURL(url)) {
     return res
-      .status(400) // TODO what is the true status code?
+      .status(400)
       .json({
         message: 'Should provide a valid url to encode'
       });
@@ -24,5 +24,8 @@ export default (req, res) => {
   const shortUrl = shortener(protocolIncludedUrl);
   return res
     .status(200)
-    .json(shortUrl);
+    .json({
+      message: 'Success',
+      data: shortUrl,
+    });
 };

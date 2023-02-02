@@ -5,14 +5,14 @@ export default (req, res) => {
   const { encodedUrl } = req.query;
   if (!encodedUrl) {
     return res
-      .status(400) // TODO what is the true status code?
+      .status(400) 
       .json({
         message: 'Should provide a url to decode'
       });
   }
   if (!validator.isURL(encodedUrl)) {
     return res
-      .status(400) // TODO what is the true status code?
+      .status(400) 
       .json({
         message: 'Should provide a valid url'
       });
@@ -22,9 +22,9 @@ export default (req, res) => {
     protocolIncludedEncodedUrl = 'http://' + encodedUrl;
   }
   const url = new URL(protocolIncludedEncodedUrl);
-  if (url.host !== 'short.link') {
+  if (url.host !== 'short.link' && url.host !== 'www.short.link') {
     return res
-      .status(400) // TODO what is the true status code?
+      .status(400) 
       .json({
         message: 'Should provide an short.link URL.'
       });
@@ -35,10 +35,13 @@ export default (req, res) => {
     return res
       .status(404)
       .json({
-        message: 'Provided short.link URL does not exist.'
+        message: 'Short url not found.'
       });
   }
   return res
     .status(200)
-    .json(storedUrl);
+    .json({
+      message: 'Success',
+      data: storedUrl
+    });
 };

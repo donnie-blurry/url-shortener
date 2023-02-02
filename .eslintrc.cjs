@@ -1,11 +1,12 @@
 module.exports = {
     'env': {
         'es2021': true,
-        'node': true
+        'node': true,
+        'jest': true
     },
+    'plugins': ['jest'],
     'extends': 'eslint:recommended',
-    'overrides': [
-    ],
+    'overrides': [],
     'parserOptions': {
         'ecmaVersion': 'latest',
         'sourceType': 'module'
