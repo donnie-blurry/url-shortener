@@ -76,4 +76,14 @@ describe('/decode route', () => {
     expect(response.body.message).toEqual('Should provide a valid url');
     expect(response.body.data).toBeUndefined();
   });
+
+  it('should respond with an error if url is not our encoded url', async () => {
+    const response = await request(app)
+      .get('/decode?encodedUrl=example.com')
+      .set('Accept', 'application/json')
+      .expect('Content-Type', /json/);
+    expect(response.statusCode).toEqual(400);
+    expect(response.body.message).toEqual('Should provide a short.link URL.');
+    expect(response.body.data).toBeUndefined();
+  });
 });
