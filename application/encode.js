@@ -1,15 +1,5 @@
 import randomstring from "randomstring";
-
-const urlObjects = []
-
-function getUrlById(id) {
-    return urlObjects.find(element => element.id === id);
-}
-
-function store(urlObject) {
-    urlObjects.push(urlObject);
-    return urlObject;
-}
+import {getById, store} from "../data-access/index.js";
 
 export default function shorten(url) {
     let id;
@@ -19,7 +9,7 @@ export default function shorten(url) {
             readable: true,
             capitalization: 'uppercase',
         })
-    } while (getUrlById(id))
+    } while (getById(id))
 
     let shortenedUrlObject = {
         id,

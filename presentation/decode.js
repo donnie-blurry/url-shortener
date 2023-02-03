@@ -1,13 +1,5 @@
 import validator from "validator";
-
-function getUrlById(shortUrlId) {
-    return {
-        id: shortUrlId,
-        shortUrl: `http://short.link/${shortUrlId}`,
-        originalUrl: "https://example.com",
-        createdAt: Date.now(),
-    };
-}
+import retriever from "../application/decode.js"
 
 export default (req, res) => {
     const {encodedUrl} = req.query;
@@ -38,7 +30,7 @@ export default (req, res) => {
             });
     }
     const shortUrlId = url.pathname.replace(/^\/+/g, '');
-    const storedUrl = getUrlById(shortUrlId);
+    const storedUrl = retriever(shortUrlId);
     if (!storedUrl) {
         return res
             .status(404)
