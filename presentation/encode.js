@@ -1,13 +1,5 @@
 import validator from "validator";
-
-function shorten(url) {
-    return {
-        id: "QAZWSX",
-        shortUrl: "http://short.link/QAZWSX",
-        originalUrl: url,
-        createdAt: Date.now(),
-    };
-}
+import shortener from "../application/encode.js"
 
 export default (req, res) => {
     const {url} = req.body;
@@ -29,7 +21,7 @@ export default (req, res) => {
     if (!/^https?:\/\//i.test(url)) {
         protocolIncludedUrl = 'http://' + url;
     }
-    const shortUrl = shorten(protocolIncludedUrl);
+    const shortUrl = shortener(protocolIncludedUrl);
     return res
         .status(200)
         .json(shortUrl);
