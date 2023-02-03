@@ -1,14 +1,11 @@
 import randomstring from 'randomstring';
+import idGenerationConfig from '../config/idGenerationConfig.js';
 import { getById, store } from '../data-access/index.js';
 
 export default function shorten (url) {
   let id;
   do {
-    id = randomstring.generate({
-      length: 6,
-      readable: true,
-      capitalization: 'uppercase'
-    });
+    id = randomstring.generate(idGenerationConfig);
   } while (getById(id));
 
   const shortenedUrlObject = {
