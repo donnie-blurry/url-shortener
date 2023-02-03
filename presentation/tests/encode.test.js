@@ -1,5 +1,5 @@
 import db from '../../data-access/datastore.js';
-import {app} from '../index.js';
+import app from '../index.js';
 
 import request from 'supertest';
 
