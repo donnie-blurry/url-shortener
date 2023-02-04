@@ -1,10 +1,13 @@
-import db from './datastore.js';
+const db = require('./datastore.js');
 
-export function getById (id) {
-  return db.get(id);
-}
+const dataAccess = {
+  getById(id) {
+    return db.get(id);
+  },
+  store(urlObject) {
+    db.set(urlObject.id, urlObject);
+    return urlObject;
+  },
+};
 
-export function store (urlObject) {
-  db.set(urlObject.id, urlObject);
-  return urlObject;
-}
+module.exports = dataAccess;

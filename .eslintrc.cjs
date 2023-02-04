@@ -1,32 +1,32 @@
 module.exports = {
-    'env': {
-        'es2021': true,
-        'node': true,
-        'jest': true
+    "env": {
+        "commonjs": true,
+        "es2021": true,
+        "node": true,
+        "jest": true
     },
-    'plugins': ['jest'],
-    'extends': 'eslint:recommended',
-    'overrides': [],
-    'parserOptions': {
-        'ecmaVersion': 'latest',
-        'sourceType': 'module'
+    "extends": "eslint:recommended",
+    "overrides": [
+    ],
+    "parserOptions": {
+        "ecmaVersion": "latest"
     },
-    'rules': {
-        'indent': [
-            'error',
+    "rules": {
+        "indent": [
+            "error",
             2
         ],
-        'linebreak-style': [
-            'error',
-            'unix'
+        "linebreak-style": [
+            "error",
+            "unix"
         ],
-        'quotes': [
-            'error',
-            'single'
+        "quotes": [
+            "error",
+            "single"
         ],
-        'semi': [
-            'error',
-            'always'
+        "semi": [
+            "error",
+            "always"
         ]
     }
-};
+}

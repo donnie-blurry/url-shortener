@@ -1,6 +1,6 @@
-import app from './presentation/index.js';
+const app = require('./presentation/index.js');
 
-import {port} from './config/server.js';
+const port = require('./config/server.js');
 
 app.listen(port, () =>
   console.log(`Url shortener running on port: ${port}`)

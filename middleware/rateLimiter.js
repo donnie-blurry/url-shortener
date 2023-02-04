@@ -1,7 +1,7 @@
-import rateLimit from 'express-rate-limit';
+const rateLimit = require('express-rate-limit');
 
-import rateLimitConfig from '../config/rateLimit.js';
+const rateLimitConfig = require('../config/rateLimit.js');
 
 const limiter = rateLimit(rateLimitConfig);
 
-export default limiter;
+module.exports = limiter;

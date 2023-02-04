@@ -5,4 +5,4 @@ const rateLimitConfig = {
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 };
 
-export default rateLimitConfig;
+module.exports = rateLimitConfig;

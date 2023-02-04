@@ -1,10 +1,10 @@
-import express from 'express';
-import helmet from 'helmet';
+const express = require('express');
+const helmet = require('helmet');
 
-import rateLimiter from '../middleware/rateLimiter.js';
+const rateLimiter = require('../middleware/rateLimiter.js');
 
-import decoder from './decode.js';
-import encoder from './encode.js';
+const decodePresentation = require('./decode.js');
+const encodePresentation = require('./encode.js');
 
 const app = express();
 
@@ -12,7 +12,7 @@ app.use(helmet());
 app.use(express.json());
 app.use(rateLimiter);
 
-app.use('/decode', decoder);
-app.use('/encode', encoder);
+app.use('/decode', decodePresentation.decode);
+app.use('/encode', encodePresentation.encode);
 
-export default app;
+module.exports = app;
