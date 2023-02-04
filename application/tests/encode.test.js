@@ -9,7 +9,7 @@ describe('encode', () => {
 
   it('should throw an error when there are too many collisions', async () => {
     // Creating collision by returning a stored url no matter what the id is.
-    jest.spyOn(dataAccess, 'getById').mockReturnValue({
+    dataAccess.getById = jest.fn().mockReturnValue({
       createdAt: Date.now(),
       id: 'ABCDEF',
       shortUrl: 'https://short.link/ABCDEF',
