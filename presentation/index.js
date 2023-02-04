@@ -1,10 +1,10 @@
 const express = require('express');
 const helmet = require('helmet');
 
-const rateLimiter = require('../middleware/rateLimiter.js');
+const rateLimiter = require('../middleware/rateLimiter');
 
-const decodePresentation = require('./decode.js');
-const encodePresentation = require('./encode.js');
+const decodePresentation = require('./decode');
+const encodePresentation = require('./encode');
 
 const app = express();
 

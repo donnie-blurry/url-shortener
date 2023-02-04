@@ -1,6 +1,6 @@
-const encodeApp = require('../encode.js');
-const dataAccess = require('../../data-access/index.js');
-const db = require('../../data-access/datastore.js');
+const encodeApp = require('../encode');
+const dataAccess = require('../../data-access/index');
+const db = require('../../data-access/datastore');
 
 describe('encode', () => {
   beforeEach(() => {

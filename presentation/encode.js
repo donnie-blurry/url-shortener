@@ -1,6 +1,6 @@
 const validator = require('validator');
 
-const encodeApp = require('../application/encode.js');
+const encodeApp = require('../application/encode');
 
 const presentation = {
   encode(req, res) {

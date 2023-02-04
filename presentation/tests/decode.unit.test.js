@@ -1,4 +1,4 @@
-const decodePresentation = require('../decode.js');
+const decodePresentation = require('../decode');
 const decodeApp = require('../../application/decode');
 
 describe('Decode presentation unit tests', () => {

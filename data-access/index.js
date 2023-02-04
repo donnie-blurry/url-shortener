@@ -1,4 +1,4 @@
-const db = require('./datastore.js');
+const db = require('./datastore');
 
 const dataAccess = {
   getById(id) {

@@ -1,13 +1,11 @@
 const randomstring = require('randomstring');
-const idGenerationConfig = require('../config/idGenerationConfig.js');
-const dataAccess = require('../data-access/index.js');
+const idGenerationConfig = require('../config/idGenerationConfig');
+const dataAccess = require('../data-access/index');
+const utils = require('./utils');
 
 const application = {
   encode (url) {
-    let protocolIncludedUrl = url;
-    if (!/^https?:\/\//i.test(url)) {
-      protocolIncludedUrl = 'http://' + url;
-    }
+    const completeUrl = utils.getCompleteUrl(url);
     let id;
     let tryCount = 0;
     do {
@@ -23,7 +21,7 @@ const application = {
     const shortenedUrlObject = {
       id,
       shortUrl: `http://short.link/${id}`,
-      originalUrl: protocolIncludedUrl,
+      originalUrl: completeUrl,
       createdAt: Date.now()
     };
     return dataAccess.store(shortenedUrlObject);

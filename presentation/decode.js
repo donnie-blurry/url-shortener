@@ -1,6 +1,6 @@
 const validator = require('validator');
 
-const decodeApp = require('../application/decode.js');
+const decodeApp = require('../application/decode');
 
 const presentation = {
   decode(req, res) {
