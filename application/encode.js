@@ -4,6 +4,10 @@ const dataAccess = require('../data-access/index.js');
 
 const application = {
   encode (url) {
+    let protocolIncludedUrl = url;
+    if (!/^https?:\/\//i.test(url)) {
+      protocolIncludedUrl = 'http://' + url;
+    }
     let id;
     let tryCount = 0;
     do {
@@ -19,7 +23,7 @@ const application = {
     const shortenedUrlObject = {
       id,
       shortUrl: `http://short.link/${id}`,
-      originalUrl: url,
+      originalUrl: protocolIncludedUrl,
       createdAt: Date.now()
     };
     return dataAccess.store(shortenedUrlObject);

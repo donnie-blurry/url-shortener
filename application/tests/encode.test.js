@@ -1,6 +1,6 @@
-const db = require('../../data-access/datastore.js');
-const dataaccess = require('../../data-access/index.js');
 const encodeApp = require('../encode.js');
+const dataAccess = require('../../data-access/index.js');
+const db = require('../../data-access/datastore.js');
 
 describe('encode', () => {
   beforeEach(() => {
@@ -9,7 +9,7 @@ describe('encode', () => {
 
   it('should throw an error when there are too many collisions', async () => {
     // Creating collision by returning a stored url no matter what the id is.
-    jest.spyOn(dataaccess, 'getById').mockReturnValue({
+    jest.spyOn(dataAccess, 'getById').mockReturnValue({
       createdAt: Date.now(),
       id: 'ABCDEF',
       shortUrl: 'https://short.link/ABCDEF',
