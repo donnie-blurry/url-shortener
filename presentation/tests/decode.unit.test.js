@@ -24,7 +24,7 @@ describe('Decode presentation unit tests', () => {
     };
     decodeApp.decode = jest.fn().mockReturnValueOnce(storedUrl);
     decodePresentation.decode(request, mockResponse);
-    expect(decodeApp.decode).toBeCalledWith(request.query.encodedUrl)
+    expect(decodeApp.decode).toBeCalledWith(request.query.encodedUrl);
     expect(mockResponse.status).toBeCalledWith(200);
     expect(mockResponse.json).toBeCalledWith({
       data: storedUrl,
