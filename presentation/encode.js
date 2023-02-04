@@ -5,14 +5,14 @@ const encodeApp = require('../application/encode.js');
 const presentation = {
   encode(req, res) {
     try {
-      const {url} = req.body;
-      if (!url) {
+      if (!req.body || !req.body.url) {
         return res
           .status(400)
           .json({
             message: 'Should provide a url to encode'
           });
       }
+      const {url} = req.body;
       if (!validator.isURL(url)) {
         return res
           .status(400)
