@@ -1,7 +1,7 @@
-import db from '../../data-access/datastore.js';
-import app from '../index.js';
+const request = require('supertest');
 
-import request from 'supertest';
+const app = require('../index.js');
+const db = require('../../data-access/datastore.js');
 
 describe('/encode route', () => {
   beforeEach(() => {

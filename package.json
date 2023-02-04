@@ -24,7 +24,6 @@
     "randomstring": "^1.2.3",
     "validator": "^13.7.0"
   },
-  "type": "module",
   "devDependencies": {
     "eslint": "^8.33.0",
     "eslint-config-standard": "^17.0.0",
