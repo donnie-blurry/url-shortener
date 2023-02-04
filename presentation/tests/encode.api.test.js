@@ -3,7 +3,7 @@ const request = require('supertest');
 const app = require('../index.js');
 const db = require('../../data-access/datastore.js');
 
-describe('/encode route', () => {
+describe('/encode route end to end tests', () => {
   beforeEach(() => {
     db.flushAll();
   });
