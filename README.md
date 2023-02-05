@@ -45,6 +45,7 @@ its dependencies
 
 ```bash
 npm install
+npm build
 npm start
 ```
 
