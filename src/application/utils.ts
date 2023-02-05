@@ -1,5 +1,5 @@
 const utils = {
-  getCompleteUrl(encodedUrl) {
+  getCompleteUrl(encodedUrl: string) {
     let protocolIncludedEncodedUrl = encodedUrl;
     if (!/^https?:\/\//i.test(encodedUrl)) {
       protocolIncludedEncodedUrl = 'http://' + encodedUrl;
@@ -8,5 +8,5 @@ const utils = {
   }
 };
 
-module.exports = utils;
+export default utils;
 

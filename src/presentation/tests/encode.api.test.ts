@@ -1,7 +1,6 @@
-const request = require('supertest');
-
-const app = require('../index');
-const db = require('../../data-access/datastore');
+import request from 'supertest';
+import app from '../index';
+import db from '../../data-access/datastore';
 
 describe('/encode route end to end tests', () => {
   beforeEach(() => {

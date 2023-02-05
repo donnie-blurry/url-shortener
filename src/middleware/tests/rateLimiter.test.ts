@@ -1,9 +1,7 @@
-const request = require('supertest');
-
-const rateLimitConfig = require('../../config/rateLimit');
-
-const db = require('../../data-access/datastore');
-const app = require('../../presentation/index');
+import request from 'supertest';
+import rateLimitConfig from '../../config/rateLimit';
+import db from '../../data-access/datastore';
+import app from '../../presentation';
 
 describe('/encode rate limiter', () => {
   beforeEach(() => {

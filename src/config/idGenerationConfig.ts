@@ -5,4 +5,4 @@ const idGenerationConfig = {
   maxTryCount: process.env.MAX_TRY_COUNT || 50,
 };
 
-module.exports = idGenerationConfig;
+export default idGenerationConfig;

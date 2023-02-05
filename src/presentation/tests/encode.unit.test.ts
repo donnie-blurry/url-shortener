@@ -1,8 +1,11 @@
-const encodePresentation = require('../encode');
-const encodeApp = require('../../application/encode');
+import {Request, Response} from 'express';
+
+import encodePresentation from '../encode';
+import encodeApp from '../../application/encode';
 
 describe('Encode presentation unit tests', () => {
-  let mockResponse;
+  let mockResponse: Partial<Response>;
+  let mockRequest : Partial<Request>;
   beforeEach(() => {
     mockResponse = {
       status: jest.fn().mockReturnThis(),
@@ -11,7 +14,7 @@ describe('Encode presentation unit tests', () => {
   });
 
   it('should respond with a short url', () => {
-    const request = {body : {url: 'https://example.com'}};
+    mockRequest = {body : {url: 'https://example.com'}};
     const storedUrl = {
       id: 'ABCDEF',
       shortUrl: 'short.link/ABCDEF',
@@ -19,8 +22,8 @@ describe('Encode presentation unit tests', () => {
       originalUrl: 'https://example.com'
     };
     encodeApp.encode = jest.fn().mockReturnValueOnce(storedUrl);
-    encodePresentation.encode(request, mockResponse);
-    expect(encodeApp.encode).toBeCalledWith(request.body.url);
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
+    expect(encodeApp.encode).toBeCalledWith(mockRequest.body.url);
     expect(mockResponse.status).toBeCalledWith(200);
     expect(mockResponse.json).toBeCalledWith({
       data: storedUrl,
@@ -29,22 +32,22 @@ describe('Encode presentation unit tests', () => {
   });
 
   it('should respond with an error if no url is provided', () => {
-    const request = {};
-    encodePresentation.encode(request, mockResponse);
+    mockRequest = {};
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
       message: 'Should provide a url to encode',
     });
-    request.body = {};
-    encodePresentation.encode(request, mockResponse);
+    mockRequest.body = {};
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
       message: 'Should provide a url to encode',
     });
-    request.body.url = '';
-    encodePresentation.encode(request, mockResponse);
+    mockRequest.body.url = '';
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
@@ -53,16 +56,16 @@ describe('Encode presentation unit tests', () => {
   });
 
   it('should respond with an error if url is invalid', () => {
-    const request = {body : {url: 'example'}};
-    encodePresentation.encode(request, mockResponse);
+    mockRequest = {body : {url: 'example'}};
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
       message: 'Should provide a valid url to encode',
     });
 
-    request.body.url = 'example.com<?';
-    encodePresentation.encode(request, mockResponse);
+    mockRequest.body.url = 'example.com<?';
+    encodePresentation.encode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
