@@ -1,8 +1,11 @@
-const decodePresentation = require('../decode');
-const decodeApp = require('../../application/decode');
+import {Request, Response} from 'express';
+
+import decodePresentation from '../decode';
+import decodeApp from '../../application/decode';
 
 describe('Decode presentation unit tests', () => {
-  let mockResponse;
+  let mockResponse: Partial<Response>;
+  let mockRequest : Partial<Request>;
   beforeEach(() => {
     mockResponse = {
       status: jest.fn().mockReturnThis(),
@@ -11,11 +14,7 @@ describe('Decode presentation unit tests', () => {
   });
 
   it('should respond with an stored url if encoded url is valid and existing', () => {
-    const request = {
-      query: {
-        encodedUrl: 'short.link/ABCDEF'
-      }
-    };
+    mockRequest = {query: {encodedUrl: 'short.link/ABCDEF'}};
     const storedUrl = {
       id: 'ABCDEF',
       shortUrl: 'short.link/ABCDEF',
@@ -23,8 +22,8 @@ describe('Decode presentation unit tests', () => {
       originalUrl: 'https://example.com'
     };
     decodeApp.decode = jest.fn().mockReturnValueOnce(storedUrl);
-    decodePresentation.decode(request, mockResponse);
-    expect(decodeApp.decode).toBeCalledWith(request.query.encodedUrl);
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
+    expect(decodeApp.decode).toBeCalledWith(mockRequest.query?.encodedUrl);
     expect(mockResponse.status).toBeCalledWith(200);
     expect(mockResponse.json).toBeCalledWith({
       data: storedUrl,
@@ -33,8 +32,8 @@ describe('Decode presentation unit tests', () => {
   });
 
   it('should respond with an error in no url is provided', () => {
-    const request = {query: {}};
-    decodePresentation.decode(request, mockResponse);
+    mockRequest = {query: {encodedUrl: ''}} ;
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
@@ -43,22 +42,22 @@ describe('Decode presentation unit tests', () => {
   });
 
   it('should respond with an error if encoded url is invalid', () => {
-    const request = {query: {encodedUrl: 'example'}};
-    decodePresentation.decode(request, mockResponse);
+    mockRequest = {query: {encodedUrl: 'example'}};
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
       message: 'Should provide a valid url',
     });
-    request.query.encodedUrl = 'example.com>?';
-    decodePresentation.decode(request, mockResponse);
+    mockRequest = {query: {encodedUrl: 'example.com>?'}};
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
       message: 'Should provide a valid url',
     });
-    request.query.encodedUrl = 'short.link.com';
-    decodePresentation.decode(request, mockResponse);
+    mockRequest = {query: {encodedUrl: 'short.link.com'}};
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(400);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,
@@ -67,12 +66,8 @@ describe('Decode presentation unit tests', () => {
   });
 
   it('should respond with an error if url does not exist', () => {
-    const request = {
-      query: {
-        encodedUrl: 'short.link/ABCDEF'
-      }
-    };
-    decodePresentation.decode(request, mockResponse);
+    mockRequest = {query: {encodedUrl: 'short.link/ABCDEF'}};
+    decodePresentation.decode(mockRequest as Request, mockResponse as Response);
     expect(mockResponse.status).toBeCalledWith(404);
     expect(mockResponse.json).toBeCalledWith({
       data: undefined,

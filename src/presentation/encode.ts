@@ -1,9 +1,11 @@
-const validator = require('validator');
+import {Request, Response} from 'express';
+import validator from 'validator';
 
-const encodeApp = require('../application/encode');
+import encodeApp from '../application/encode';
+import CustomError from '../types/Error';
 
 const presentation = {
-  encode(req, res) {
+  encode(req: Request, res:Response) {
     try {
       if (!req.body || !req.body.url) {
         return res
@@ -12,7 +14,7 @@ const presentation = {
             message: 'Should provide a url to encode'
           });
       }
-      const {url} = req.body;
+      const url = req.body.url as string;
       if (!validator.isURL(url)) {
         return res
           .status(400)
@@ -28,7 +30,7 @@ const presentation = {
           data: shortUrl,
         });
     } catch (error) {
-      if (error.code) {
+      if (error instanceof CustomError) {
         return res
           .status(error.code)
           .json({
@@ -43,4 +45,4 @@ const presentation = {
     }
   }
 };
-module.exports = presentation;
+export default presentation;

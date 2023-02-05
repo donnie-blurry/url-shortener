@@ -1,11 +1,13 @@
-const validator = require('validator');
+import {Request, Response} from 'express';
+import validator from 'validator';
 
-const decodeApp = require('../application/decode');
+import decodeApp from '../application/decode';
+import CustomError from '../types/Error';
 
 const presentation = {
-  decode(req, res) {
+  decode(req: Request, res:Response) {
     try {
-      const {encodedUrl} = req.query;
+      const encodedUrl = req.query.encodedUrl as string;
       if (!encodedUrl) {
         return res
           .status(400)
@@ -35,20 +37,19 @@ const presentation = {
           data: storedUrl
         });
     } catch (error) {
-      if (error.code) {
+      if (error instanceof CustomError)
         return res
           .status(error.code)
           .json({
             message: error.message
           });
-      }
-      return res
-        .status(500)
-        .json({
-          message: 'Sorry, something on our went wrong.'
-        });
     }
+    return res
+      .status(500)
+      .json({
+        message: 'Sorry, something on our went wrong.'
+      });
   }
 };
 
-module.exports = presentation;
+export default presentation;
