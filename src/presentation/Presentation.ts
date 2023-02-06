@@ -11,7 +11,7 @@ import CustomError from '../types/Error';
 import {ShortUrl} from '../types/ShortUrl';
 
 export class Presentation {
-  private static setResponseStatusAndJson(res: Response, code: number, message: string, data?: any) {
+  private static setResponseStatusAndJson(res: Response, code: number, message: string, data?: ShortUrl) {
     res
       .status(code)
       .json({
