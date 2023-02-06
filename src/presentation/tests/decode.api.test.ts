@@ -52,7 +52,7 @@ describe('/decode route end to end tests', () => {
       .set('Accept', 'application/json')
       .expect('Content-Type', /json/);
     expect(firstResponse.statusCode).toEqual(404);
-    expect(firstResponse.body.message).toEqual('Short url not found.');
+    expect(firstResponse.body.message).toEqual('Encoded url not found!');
 
   });
 
@@ -72,7 +72,7 @@ describe('/decode route end to end tests', () => {
       .set('Accept', 'application/json')
       .expect('Content-Type', /json/);
     expect(response.statusCode).toEqual(400);
-    expect(response.body.message).toEqual('Should provide a valid url');
+    expect(response.body.message).toEqual('Should provide a valid url to encode');
     expect(response.body.data).toBeUndefined();
   });
 
