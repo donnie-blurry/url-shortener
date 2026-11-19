@@ -1,7 +1,7 @@
 [project]
 name = "url-shortener"
 version = "0.1.0"
-description = "Add your description here"
+description = "URL shortener with durable visit analytics and UUID ownership"
 readme = "README.md"
 authors = [
     { name = "Donnie", email = "danialsheikhani@gmail.com" }

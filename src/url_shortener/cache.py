@@ -4,9 +4,9 @@ from typing import cast
 from fastapi import Request
 from pydantic import ValidationError
 from redis.asyncio import Redis
+from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
-from redis.retry import Retry
 
 from url_shortener.schemas import CreateLink
 
