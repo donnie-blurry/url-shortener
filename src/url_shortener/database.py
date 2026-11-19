@@ -1,6 +1,9 @@
 from collections.abc import AsyncIterator
+from typing import cast
 
+from fastapi import Request
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -8,19 +11,20 @@ from sqlalchemy.ext.asyncio import (
 
 from url_shortener.config import Settings
 
-settings = Settings()
 
-engine = create_async_engine(
-    str(settings.database_url),
-    pool_pre_ping=True,
-)
+def create_database(
+    settings: Settings,
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(
+        str(settings.database_url),
+        pool_pre_ping=True,
+        isolation_level="READ COMMITTED",
+        connect_args={"connect_timeout": 5},
+    )
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
 
-session_factory = async_sessionmaker(
-    bind=engine,
-    expire_on_commit=False,
-)
 
-
-async def get_session() -> AsyncIterator[AsyncSession]:
-    async with session_factory() as session:
+async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
+    factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
+    async with factory() as session:
         yield session
