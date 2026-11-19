@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=python:3.14-slim
+ARG PYTHON_IMAGE=docker.arvancloud.ir/python:3.14-slim
 FROM ${PYTHON_IMAGE} AS build
 RUN pip install --no-cache-dir uv==0.13.9
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never

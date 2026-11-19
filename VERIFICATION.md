@@ -28,11 +28,19 @@ loopback port. Existing laptop services and databases were not modified.
 - Downgraded the disposable database to base, upgraded again, and compared schema
   successfully. No throughput or latency benchmark was performed.
 
-## Container verification limit
+## Container verification
 
-The Dockerfile parser ran, but the image build could not fetch the Python base
-image: public Docker Hub returned 403, and the configured mirror failed DNS
-resolution. The image has not been built or runtime-tested in this environment.
-Re-run the README Docker build and startup instructions where registry access
-is available. `PYTHON_IMAGE` can be overridden with a reachable Python 3.14-slim
-mirror using a Docker build argument.
+Built `bimebazar-url-shortener:verification` successfully using
+`docker.arvancloud.ir/python:3.14-slim`. ArvanCloud is now the Dockerfile default;
+the README also documents Hamravesh as an alternative build argument.
+
+Ran the image as the configured non-root `app` user against disposable PostgreSQL
+and Redis containers on an isolated Docker network. Applied Alembic migrations
+from inside the application image. Verified PostgreSQL health, link creation,
+two redirects with the expected headers, immediate statistics reporting two
+visits, owner rejection, and unknown-code handling through the published HTTP
+port. Confirmed `/app/.env` was absent from the image.
+
+Public Docker Hub had returned 403 and the earlier private mirror failed DNS;
+using ArvanCloud resolved the base-image retrieval problem. Hamravesh's alternative
+address is documented but was not used for this successful build.

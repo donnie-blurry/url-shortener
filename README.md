@@ -95,6 +95,15 @@ uv export --locked --no-dev --no-emit-project --format requirements.txt --output
 docker build -t url-shortener:local .
 ```
 
+The default base image is `docker.arvancloud.ir/python:3.14-slim` from
+[ArvanCloud's mirror](https://www.arvancloud.ir/fa/dev/docker).
+To use [Hamravesh's mirror](https://hamravesh.com/blog/container-registry-mirroring-and-caching/):
+
+```sh
+docker build --build-arg PYTHON_IMAGE=hub.hamdocker.ir/library/python:3.14-slim \
+  -t url-shortener:local .
+```
+
 Supply connection URLs reachable **from inside the container**; container localhost
 is not your host's PostgreSQL or Redis. An ignored `.env.docker` file can contain
 those URLs. On Linux, use `host.docker.internal` with the host-gateway flag below,
@@ -122,7 +131,5 @@ Proxy-aware IP extraction is deferred; startup explicitly disables proxy headers
 The submission includes source, migrations, lockfile, `requirements.txt`, Dockerfile,
 unit tests, and supporting documentation. Cloud deployment is outside this iteration.
 
-See [VERIFICATION.md](VERIFICATION.md) for executed checks and the current
-container-build limitation caused by registry access. When using a mirror,
-override the Dockerfile's `PYTHON_IMAGE` build argument with a reachable
-Python 3.14-slim image.
+See [VERIFICATION.md](VERIFICATION.md) for executed checks. The `PYTHON_IMAGE`
+build argument can also select another reachable Python 3.14-slim image.
