@@ -1,8 +1,16 @@
 # Verification
 
 Verified on 2026-11-20 with Python 3.14 and the uv-locked environment.
-This record describes the current Redis Streams implementation; earlier synchronous
-analytics checks no longer define the expected redirect behavior.
+The original Redis Streams checks below used the earlier two-revision schema.
+The project now uses a single initial migration for fresh databases.
+
+## Single-migration schema checks
+
+- 85 pytest tests passed, along with Ruff lint/format and strict mypy checks.
+- On a disposable PostgreSQL 18 database, applied the initial migration,
+  downgraded to base, and reapplied it. `alembic check` found no schema drift.
+- Ran the worker's processing method twice with the same event UUID and mocked
+  Redis acknowledgement. PostgreSQL stored one Visit and incremented the count once.
 
 ## Automated checks
 

@@ -41,9 +41,9 @@ scans pending work with XAUTOCLAIM, using a 60-second idle threshold. A forced
 process exit leaves unacknowledged work recoverable. SIGTERM/SIGINT finish the
 current attempt when possible, then close resources and stop consumption.
 
-A unique non-null Visit event UUID identifies the logical event across delivery
-attempts. The worker inserts with ON CONFLICT DO NOTHING and increments the
-ShortLink counter only for a new Visit, in the same PostgreSQL transaction.
+A Visit's event UUID is its primary key and identifies the logical event across
+delivery attempts. The worker inserts with ON CONFLICT DO NOTHING and increments
+the ShortLink counter only for a new Visit, in the same PostgreSQL transaction.
 Failures roll both changes back. PostgreSQL serializes updates to the same counter,
 preventing lost updates. Replayed events, including commit-before-ack crashes,
 do not increment again. Preserve producer timestamps rather than worker time.
@@ -55,10 +55,6 @@ to 30 seconds. Malformed events and missing mappings move to
 They do not affect counters and are retained for inspection. Delivery can repeat;
 only database effects for a retained event UUID are deduplicated. Do not claim
 exactly-once delivery or lossless analytics.
-
-Migration `0002` backfills existing visits with UUIDs, enforces uniqueness, and
-preserves counts. Stop old API instances before migration/new worker rollout.
-Do not mix old direct writers with versions requiring explicit event IDs.
 
 ## Redis persistence and backlog
 

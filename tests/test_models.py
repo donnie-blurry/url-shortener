@@ -36,5 +36,8 @@ def test_visits_reference_existing_links_and_support_ip_addresses():
         next(iter(table.c.short_code.foreign_keys)).target_fullname
         == "short_links.short_code"
     )
-    assert table.c.id.identity is not None
+    assert table.primary_key.name == "pk_visits"
+    assert list(table.primary_key.columns.keys()) == ["event_id"]
+    assert table.c.event_id.type.as_uuid
+    assert "id" not in table.c
     assert Visit.__tablename__ == "visits"

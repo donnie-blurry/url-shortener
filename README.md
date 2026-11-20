@@ -45,8 +45,8 @@ before processing. AOF everysec can still lose recent events after a crash.
 
 ## Migrate and run
 
-Stop the old API before applying migration `0002`, which backfills Visit event
-UUIDs and adds a unique non-null constraint. Then run API and worker separately:
+Start with a fresh database. The single initial migration creates both tables
+and the short-code sequence. Then run the API and worker separately.
 
 ```sh
 uv run alembic upgrade head

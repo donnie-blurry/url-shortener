@@ -24,15 +24,16 @@ def resources():
         __aenter__=AsyncMock(), __aexit__=AsyncMock(return_value=False)
     )
     session.begin.return_value = transaction
+    event_id = uuid4()
     session.execute = AsyncMock(
-        return_value=SimpleNamespace(scalar_one_or_none=lambda: 1)
+        return_value=SimpleNamespace(scalar_one_or_none=lambda: event_id)
     )
     sessions = MagicMock(return_value=session)
     worker = VisitWorker(queue, sessions)
     worker.acknowledge = AsyncMock()
     worker.quarantine = AsyncMock()
     event = VisitEvent(
-        event_id=uuid4(),
+        event_id=event_id,
         short_code="1",
         client_ip="192.0.2.1",
         visited_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -57,7 +58,9 @@ async def test_worker_commits_visit_and_count_before_ack(resources):
     r.worker.acknowledge.side_effect = acknowledge
     await r.worker.process(b"1-0", r.fields)
     assert r.session.execute.await_count == 2
-    values = r.session.execute.await_args_list[0].args[0].compile().params
+    statement = r.session.execute.await_args_list[0].args[0].compile()
+    assert str(statement).endswith("RETURNING visits.event_id")
+    values = statement.params
     assert values["event_id"] == r.event.event_id
     assert values["visited_at"] == r.event.visited_at
     assert values["short_code"] == "1"

@@ -71,7 +71,7 @@ class VisitWorker:
                             visited_at=event.visited_at,
                         )
                         .on_conflict_do_nothing(index_elements=[col(Visit.event_id)])
-                        .returning(col(Visit.id))
+                        .returning(col(Visit.event_id))
                     )
                     if result.scalar_one_or_none() is not None:
                         await session.execute(

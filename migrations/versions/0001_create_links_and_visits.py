@@ -33,7 +33,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "visits",
-        sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
+        sa.Column("event_id", sa.Uuid(), nullable=False),
         sa.Column("short_code", sa.String(), nullable=False),
         sa.Column("client_ip", postgresql.INET(), nullable=False),
         sa.Column(
@@ -42,7 +42,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("id", name="pk_visits"),
+        sa.PrimaryKeyConstraint("event_id", name="pk_visits"),
         sa.ForeignKeyConstraint(
             ["short_code"],
             ["short_links.short_code"],

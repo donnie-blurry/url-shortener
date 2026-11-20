@@ -22,16 +22,13 @@ should map to internal user UUIDs rather than become link owners directly.
 
 | Field | Storage | Rules |
 | --- | --- | --- |
-| `id` | BIGINT identity primary key | Generated for the persisted row |
-| `event_id` | Unique non-null UUID | Stable producer event identity; deduplicates replay |
+| `event_id` | PostgreSQL UUID primary key | Stable producer event identity; deduplicates replay |
 | `short_code` | Indexed foreign key | References an existing ShortLink |
 | `client_ip` | INET | IPv4/IPv6 direct-peer address captured by the API |
 | `visited_at` | Timezone-aware timestamp | Producer's request time, not worker processing time |
 
 All persisted fields are non-null. Multiple events may share a code, IP, and
-similar timestamps. Retain processed visits indefinitely. Migration `0002` assigns
-UUIDs to pre-existing visits before enforcing uniqueness; their counters and other
-fields remain unchanged.
+similar timestamps. Retain processed visits indefinitely.
 
 ## Queue Event
 
@@ -55,7 +52,7 @@ One ShortLink has zero or more Visits; each Visit belongs to exactly one mapping
 For each link, `visit_count` equals its committed Visit-row count. This invariant
 covers processed unique events, not all redirects or pending messages.
 
-The worker inserts with `ON CONFLICT (event_id) DO NOTHING RETURNING id` and
+The worker inserts with `ON CONFLICT (event_id) DO NOTHING RETURNING event_id` and
 increments the counter only for a new insertion, within one READ COMMITTED
 transaction. The foreign key prevents orphan rows. A duplicate event causes no
 counter change. Redis acknowledgement happens only after commit, so replay after

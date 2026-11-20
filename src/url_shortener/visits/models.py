@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import ClassVar
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, DateTime, Identity, func
+from sqlalchemy import Column, DateTime, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import Field, SQLModel
 
@@ -13,10 +13,7 @@ from url_shortener.links.models import ShortLink
 class Visit(SQLModel, table=True):
     __tablename__: ClassVar[str] = "visits"
 
-    id: int | None = Field(
-        default=None, sa_column=Column(BigInteger, Identity(), primary_key=True)
-    )
-    event_id: UUID = Field(default_factory=uuid4, unique=True)
+    event_id: UUID = Field(primary_key=True)
     short_code: str = Field(
         foreign_key=f"{ShortLink.__tablename__}.short_code", index=True
     )
