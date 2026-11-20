@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import ClassVar
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
@@ -50,6 +50,7 @@ class Visit(SQLModel, table=True):
     id: int | None = Field(
         default=None, sa_column=Column(BigInteger, Identity(), primary_key=True)
     )
+    event_id: UUID = Field(default_factory=uuid4, unique=True)
     short_code: str = Field(foreign_key="short_links.short_code", index=True)
     client_ip: IPv4Address | IPv6Address = Field(sa_column=Column(INET, nullable=False))
     visited_at: datetime = Field(
