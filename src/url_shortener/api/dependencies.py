@@ -17,7 +17,24 @@ def strip_identity(value: object) -> object:
 OwnerId = Annotated[UUID, BeforeValidator(strip_identity)]
 
 
-async def get_owner_id(owner_id: Annotated[OwnerId, Header(alias="X-User-ID")]) -> UUID:
+async def get_owner_id(
+    owner_id: Annotated[
+        OwnerId,
+        Header(
+            alias="X-User-ID",
+            description=(
+                "Owner UUID. Use the same value when creating a link and reading "
+                "its statistics. This trusted header is not authentication."
+            ),
+            openapi_examples={
+                "demo_owner": {
+                    "summary": "Demo owner",
+                    "value": "550e8400-e29b-41d4-a716-446655440000",
+                }
+            },
+        ),
+    ],
+) -> UUID:
     return owner_id
 
 

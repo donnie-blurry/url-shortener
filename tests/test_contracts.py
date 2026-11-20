@@ -9,6 +9,24 @@ from pydantic import ValidationError
 
 from url_shortener.api.dependencies import get_owner_id
 from url_shortener.links.schemas import CreateLink, LinkResponse
+from url_shortener.main import create_app
+
+
+def test_owner_header_has_shared_valid_example_without_default():
+    schema = create_app().openapi()
+    examples = []
+    for path, method in [("/shorten", "post"), ("/stats/{short_code}", "get")]:
+        header = next(
+            parameter
+            for parameter in schema["paths"][path][method]["parameters"]
+            if parameter["name"] == "X-User-ID"
+        )
+        assert header["in"] == "header"
+        assert header["required"] is True
+        assert header["schema"]["format"] == "uuid"
+        assert "default" not in header["schema"]
+        examples.append(UUID(header["examples"]["demo_owner"]["value"]))
+    assert examples[0] == examples[1]
 
 
 @pytest.mark.parametrize(

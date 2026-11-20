@@ -59,6 +59,11 @@ failed database health check. Swagger documentation is at `/docs`.
 
 ## Example requests
 
+In `/docs`, click **Try it out** and use the **Demo owner** example for
+`X-User-ID`. Keep the same UUID for link creation and statistics requests.
+To try another owner, generate a UUID with
+`uv run python -c 'from uuid import uuid4; print(uuid4())'` and reuse that value.
+
 ```sh
 curl -i http://127.0.0.1:8000/shorten \
   -H 'Content-Type: application/json' \
