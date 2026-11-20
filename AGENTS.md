@@ -25,6 +25,17 @@ Run FastAPI locally with native or containerized PostgreSQL and Redis. Provide a
 
 Use four-space indentation, `snake_case` for modules, functions, and variables, and `PascalCase` for classes. Annotate application function parameters and return values. Use Ruff for formatting, linting, and import sorting, and mypy for type checking. Configure both in `pyproject.toml`. Keep modules focused on a single responsibility.
 
+### General Principles
+Keep things in one function unless composable or reusable
+
+Validate unknown values once at the boundary that owns them. Pass typed values inward instead of repeated checks and property-existence checks. Do not defensively revalidate values already guaranteed by a schema, constructor, or internal type.
+
+Do not extract single-use helpers preemptively. Inline the logic at the call site unless the helper is reused, hides a genuinely complex boundary, or has a clear independent name that improves the caller.
+
+Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
+
+Avoid try/catch where possible
+
 ## Testing Guidelines
 
 Use pytest with `test_*.py` files and `test_<behavior>` functions. Start with unit tests that mock database and cache boundaries; defer real PostgreSQL/Redis integration tests. Cover important behavior, boundary conditions, failure paths, and bug regressions. No minimum coverage percentage is required.
