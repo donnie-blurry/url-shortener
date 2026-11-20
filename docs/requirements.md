@@ -2,7 +2,7 @@
 
 ## Scope and Technology
 
-Implement [Task.md](Task.md) locally using Python 3.14, FastAPI, SQLModel over
+Implement [Task.md](../Task.md) locally using Python 3.14, FastAPI, SQLModel over
 async SQLAlchemy/Psycopg, PostgreSQL, Redis, and Alembic. Use uv for dependency
 management. PostgreSQL is the source of truth for mappings and processed analytics.
 Redis supplies mapping caching and a Stream queue. Run the API and visit worker

@@ -117,5 +117,5 @@ requires Redis 6.2+ for `XAUTOCLAIM`; use persistent storage, AOF with
 stream TTLs or trim unprocessed messages. Monitor pending count, oldest pending
 age, backlog, publish failures, worker retries, and failed-stream length.
 
-See [SCALABILITY.md](SCALABILITY.md) for batching alternatives, connection budgets,
+See [SCALABILITY.md](../SCALABILITY.md) for batching alternatives, connection budgets,
 queue durability, hot-counter limits, and campaign traffic handling.

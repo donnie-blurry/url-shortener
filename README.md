@@ -159,9 +159,9 @@ proxy-aware IP handling is deferred (`--no-proxy-headers`). No Compose setup is 
 
 ## Design and submission
 
-[Task.md](Task.md) is the assignment reference. [Requirements](requirements.md),
-[APIs](apis.md), [entities](entities.md), and [flows](flows.md) describe current
+[Task.md](Task.md) is the assignment reference. [Requirements](docs/requirements.md),
+[APIs](docs/apis.md), [entities](docs/entities.md), and [flows](docs/flows.md) describe current
 behavior. [SCALABILITY.md](SCALABILITY.md) explains loss/freshness trade-offs and
-[VERIFICATION.md](VERIFICATION.md) records executed checks. The submission includes
+[VERIFICATION.md](docs/verification.md) records executed checks. The submission includes
 source, migrations, lockfile, production requirements export, Dockerfile, and tests.
 Cloud deployment is outside scope.

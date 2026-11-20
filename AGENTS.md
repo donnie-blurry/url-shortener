@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This solo interview project is a Python 3.14 URL shortener built with FastAPI, SQLModel, and async SQLAlchemy. PostgreSQL provides durable storage; Redis provides caching. Application code lives in `src/url_shortener/`, tests in `tests/`, and Alembic migrations in `migrations/`. Root design documents define requirements, APIs, entities, and flows.
+This solo interview project is a Python 3.14 URL shortener built with FastAPI, SQLModel, and async SQLAlchemy. PostgreSQL provides durable storage; Redis provides caching. Application code lives in `src/url_shortener/`, tests in `tests/`, and Alembic migrations in `migrations/`. Design documents in `docs/` define requirements, APIs, entities, and flows. The `api/`, `links/`, and `visits/` packages separate HTTP wiring, link behavior, and analytics processing.
 
 Treat `.agents/`, `.codex/`, `.aws/`, and `.git/` as environment or tool metadata; do not place application code there.
 

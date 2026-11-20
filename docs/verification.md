@@ -56,3 +56,22 @@ is `python -m url_shortener.worker`; the default command remains Uvicorn.
 
 The README documents ArvanCloud as default and Hamravesh as an alternative. No
 production services, cloud deployment, or permanent integration suite were added.
+
+## Directory reorganization checks
+
+Reorganized source into `api/`, `links/`, and `visits/`, leaving engine/config/cache
+and application/worker entry points at package root. Moved design documentation
+into `docs/`; tests remain flat.
+
+- All 79 existing tests, Ruff checks, and strict mypy checks passed after import updates.
+- Generated OpenAPI was identical before/after the move, including operation IDs.
+- Offline migration SQL was identical, and the rebuilt image's `alembic check`
+  reported no model/schema differences on a migrated disposable database.
+- The built wheel includes the new packages and excludes obsolete flat modules.
+- Local Markdown links resolve after documentation moves.
+- Rebuilt the Docker image via ArvanCloud. Verified API health, creation, redirect
+  headers, owner checks, and unknown-code behavior. With the worker stopped,
+  statistics stayed at zero; the unchanged worker CLI then processed the event
+  and raised the count to one.
+
+The refactor introduced no API contract, schema, queue, or dependency changes.
