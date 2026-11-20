@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from prometheus_client import CollectorRegistry
 from redis.exceptions import ConnectionError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -29,7 +30,8 @@ def resources():
         return_value=SimpleNamespace(scalar_one_or_none=lambda: event_id)
     )
     sessions = MagicMock(return_value=session)
-    worker = VisitWorker(queue, sessions)
+    metrics = CollectorRegistry()
+    worker = VisitWorker(queue, sessions, registry=metrics)
     worker.acknowledge = AsyncMock()
     worker.quarantine = AsyncMock()
     event = VisitEvent(
@@ -43,6 +45,7 @@ def resources():
         queue=queue,
         session=session,
         worker=worker,
+        metrics=metrics,
         transaction=transaction,
         event=event,
         fields={b"payload": event.model_dump_json().encode()},
@@ -70,7 +73,7 @@ async def test_worker_commits_visit_and_count_before_ack(resources):
 async def test_replayed_event_does_not_increment_again(resources):
     r = resources
     r.session.execute.return_value.scalar_one_or_none = lambda: None
-    await r.worker.process(b"2-0", r.fields)
+    assert await r.worker.process(b"2-0", r.fields) == "acknowledged"
     assert r.session.execute.await_count == 1
     r.worker.acknowledge.assert_awaited_once()
 
@@ -106,7 +109,7 @@ async def test_database_failure_leaves_event_unacknowledged(resources, failure):
     ],
 )
 async def test_malformed_events_are_quarantined(resources, fields):
-    await resources.worker.process(b"1-0", fields)
+    assert await resources.worker.process(b"1-0", fields) == "quarantined"
     resources.worker.quarantine.assert_awaited_once_with(
         b"1-0", fields, "Invalid visit event"
     )
@@ -150,6 +153,7 @@ async def test_consumer_reads_new_or_recovers_abandoned_event(resources, recover
 
     async def process(*args):
         stop.set()
+        return "acknowledged"
 
     r.worker.process = AsyncMock(side_effect=process)
     await r.worker.run(stop)
@@ -158,6 +162,13 @@ async def test_consumer_reads_new_or_recovers_abandoned_event(resources, recover
     )
     assert r.client.xautoclaim.await_args.args[0] == "test:visits"
     r.worker.process.assert_awaited_once_with(*entry)
+    assert (
+        r.metrics.get_sample_value(
+            "url_shortener_visit_processing_duration_seconds_count",
+            {"outcome": "acknowledged"},
+        )
+        == 1
+    )
     if recover:
         r.client.xreadgroup.assert_not_awaited()
     else:
@@ -195,12 +206,17 @@ async def test_retry_preserves_pending_event_and_backs_off(resources, monkeypatc
         if attempts < 4:
             raise SQLAlchemyError("database temporarily unavailable")
         stop.set()
+        return "quarantined"
 
     r.worker.process = AsyncMock(side_effect=process)
     await r.worker.run(stop)
     assert delays == [1, 2, 4]
     assert r.worker.process.await_count == 4
     r.client.xreadgroup.assert_awaited_once()
+    count = "url_shortener_visit_processing_duration_seconds_count"
+    assert r.metrics.get_sample_value(count, {"outcome": "failed"}) == 3
+    assert r.metrics.get_sample_value(count, {"outcome": "quarantined"}) == 1
+    assert r.metrics.get_sample_value(count, {"outcome": "acknowledged"}) == 0
 
 
 async def test_shutdown_during_failed_processing_leaves_pending_event(resources):

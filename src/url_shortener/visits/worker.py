@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import time
-from typing import cast
+from typing import Literal, cast
 from uuid import uuid4
 
+from prometheus_client import CollectorRegistry, Histogram
 from pydantic import ValidationError
 from redis.exceptions import RedisError, ResponseError
 from sqlalchemy import update
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col
 
 from url_shortener.links.models import ShortLink
+from url_shortener.metrics import LATENCY_BUCKETS
 from url_shortener.visits.events import VisitEvent
 from url_shortener.visits.models import Visit
 from url_shortener.visits.queue import CONSUMER_GROUP, VisitQueue
@@ -23,11 +25,24 @@ StreamEntry = tuple[bytes, dict[bytes, bytes]]
 
 class VisitWorker:
     def __init__(
-        self, queue: VisitQueue, sessions: async_sessionmaker[AsyncSession]
+        self,
+        queue: VisitQueue,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        registry: CollectorRegistry | None = None,
     ) -> None:
         self.queue = queue
         self.sessions = sessions
         self.consumer = f"worker-{uuid4()}"
+        self.processing_duration = Histogram(
+            "url_shortener_visit_processing_duration_seconds",
+            "Time spent processing a visit event attempt in seconds.",
+            ("outcome",),
+            registry=registry if registry is not None else CollectorRegistry(),
+            buckets=LATENCY_BUCKETS,
+        )
+        for outcome in ("acknowledged", "quarantined", "failed"):
+            self.processing_duration.labels(outcome)
 
     async def acknowledge(self, message_id: bytes) -> None:
         async with self.queue.client.pipeline(transaction=True) as pipe:
@@ -52,12 +67,14 @@ class VisitWorker:
             await pipe.execute()
         logger.warning("Quarantined visit event: %s", reason)
 
-    async def process(self, message_id: bytes, fields: dict[bytes, bytes]) -> None:
+    async def process(
+        self, message_id: bytes, fields: dict[bytes, bytes]
+    ) -> Literal["acknowledged", "quarantined"]:
         try:
             event = VisitEvent.model_validate_json(fields.get(b"payload", b""))
         except ValidationError:
             await self.quarantine(message_id, fields, "Invalid visit event")
-            return
+            return "quarantined"
 
         try:
             await self._persist_visit(event)
@@ -68,9 +85,10 @@ class VisitWorker:
                 == "fk_visits_short_code_short_links"
             ):
                 await self.quarantine(message_id, fields, "Missing URL mapping")
-                return
+                return "quarantined"
             raise
         await self.acknowledge(message_id)
+        return "acknowledged"
 
     async def run(self, stop: asyncio.Event) -> None:
         initialized = False
@@ -90,7 +108,17 @@ class VisitWorker:
                     current = await self._read_new_message()
                 if current is None:
                     continue
-                await self.process(*current)
+                started = time.perf_counter()
+                try:
+                    outcome = await self.process(*current)
+                except Exception:
+                    self.processing_duration.labels("failed").observe(
+                        time.perf_counter() - started
+                    )
+                    raise
+                self.processing_duration.labels(outcome).observe(
+                    time.perf_counter() - started
+                )
                 current = None
                 delay = 1.0
             except RedisError, SQLAlchemyError:

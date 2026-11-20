@@ -3,7 +3,45 @@
 Python 3.14 / FastAPI / SQLModel service with PostgreSQL storage, Redis mapping
 caching, and best-effort background visit processing through Redis Streams.
 
-## Local setup
+## Run with Docker Compose
+
+Copy `.env.compose.example` to `.env.compose` and replace both placeholders with
+different passwords. Use a URL-safe PostgreSQL password, for example one generated
+by `openssl rand -hex 24`, because it also goes into the application database URL.
+
+```sh
+docker compose --env-file .env.compose up --build -d
+docker compose --env-file .env.compose ps -a
+```
+
+Compose starts PostgreSQL and Redis, applies Alembic migrations, and then starts the
+API and two visit workers. A successful migration exits with code 0. Open the [API
+docs](http://127.0.0.1:8000/docs) or use the example requests below. Sign in to the
+[URL Shortener dashboard](http://127.0.0.1:3000/d/url-shortener/url-shortener) as
+`admin` with your Compose Grafana password. Grafana provisions the Prometheus data
+source and dashboard automatically.
+
+Send requests across several 15-second scrapes to populate the request and worker
+rate charts. HTTP latency measures how long the API takes to send the response.
+Worker latency covers individual event processing attempts through acknowledgement
+or quarantine. A replay counts as an acknowledged attempt and each retry adds a
+separate attempt. The scrape health panel lists each replica.
+
+```sh
+docker compose --env-file .env.compose up -d --scale worker=3 worker
+docker compose --env-file .env.compose down
+```
+
+Prometheus picks up new worker replicas through DNS. `down` retains the PostgreSQL,
+Redis, Prometheus, and Grafana volumes. The metrics listeners and Prometheus are
+reachable inside the Compose network. The API and Grafana use loopback host ports.
+Set `API_HOST_PORT` or `GRAFANA_HOST_PORT` in `.env.compose` if a port is in use.
+The Python base image, Redis, Prometheus, and Grafana use ArvanCloud by default.
+To use another registry, set `PYTHON_IMAGE`, `POSTGRES_IMAGE`, `REDIS_IMAGE`,
+`PROMETHEUS_IMAGE`, or `GRAFANA_IMAGE` in `.env.compose`. For example,
+`PYTHON_IMAGE=hub.hamdocker.ir/library/python:3.14-slim` uses Hamravesh for Python.
+
+## Native setup
 
 Install uv and Python 3.14. Use PostgreSQL 13+ and Redis 6.2+. Create a dedicated
 PostgreSQL database and role allowed to create tables and sequences:
@@ -65,6 +103,18 @@ and close resources; abandoned pending events are reclaimable after 60 seconds.
 `GET /health` tests PostgreSQL using `SELECT 1`, not Redis or worker readiness.
 It returns `200 {"status":"OK"}` or `503`; cached redirects may work despite a
 failed database health check. Swagger documentation is at `/docs`.
+
+Set `METRICS_PORT` per process to expose Prometheus metrics on a dedicated listener.
+When running both processes on the same host, give each a different port.
+`METRICS_HOST` defaults to `127.0.0.1`.
+
+```sh
+METRICS_PORT=9100 uv run uvicorn url_shortener.main:app --no-proxy-headers
+METRICS_PORT=9101 uv run python -m url_shortener.worker
+```
+
+Run those commands in separate terminals and scrape `/metrics` on each port.
+Use one Uvicorn process per metrics port.
 
 ## Example requests
 
@@ -169,7 +219,7 @@ docker run --rm --add-host=host.docker.internal:host-gateway \
 
 Run migration once, then API and worker as separate containers. The same image
 runs both as a non-root user. Credentials are excluded, reload is disabled, and
-proxy-aware IP handling is deferred (`--no-proxy-headers`). No Compose setup is required.
+proxy-aware IP handling is deferred (`--no-proxy-headers`).
 
 ## Design and submission
 
@@ -177,5 +227,6 @@ proxy-aware IP handling is deferred (`--no-proxy-headers`). No Compose setup is 
 [APIs](docs/apis.md), [entities](docs/entities.md), and [flows](docs/flows.md) describe current
 behavior. [SCALABILITY.md](SCALABILITY.md) explains loss/freshness trade-offs and
 [VERIFICATION.md](docs/verification.md) records executed checks. The submission includes
-source, migrations, lockfile, production requirements export, Dockerfile, and tests.
+source, migrations, lockfile, production requirements export, Dockerfile, Compose
+configuration, dashboard provisioning, and tests.
 Cloud deployment is outside scope.

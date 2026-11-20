@@ -19,3 +19,6 @@ class Settings(BaseSettings):
     cache_ttl_seconds: PositiveInt = 3600
 
     max_code_attempts: PositiveInt = 5
+
+    metrics_host: str = "127.0.0.1"
+    metrics_port: int | None = Field(default=None, ge=1, le=65535)

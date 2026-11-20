@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from prometheus_client import CollectorRegistry
 from redis.exceptions import ConnectionError, TimeoutError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +44,8 @@ def resources():
             return False
 
     session.begin.side_effect = Transaction
-    state.app = create_app()
+    state.metrics = CollectorRegistry()
+    state.app = create_app(registry=state.metrics)
     state.app.state.settings = Settings(
         database_url="postgresql+psycopg://localhost/shortener",
         redis_url="redis://localhost/0",
@@ -67,6 +69,57 @@ def resources():
 
 def result(value):
     return SimpleNamespace(scalar_one_or_none=lambda: value)
+
+
+async def test_http_metrics_use_templates_and_response_status(client, resources):
+    resources.cache.get.return_value = "https://example.com"
+    assert (await client.get("/abc")).status_code == 302
+    assert (await client.get("/def?token=secret")).status_code == 302
+    assert (await client.request("CUSTOM", "/missing/nested")).status_code == 404
+    resources.session.scalar.side_effect = SQLAlchemyError("unavailable")
+    assert (await client.get("/health")).status_code == 503
+
+    count = "url_shortener_http_request_duration_seconds_count"
+    assert (
+        resources.metrics.get_sample_value(
+            count, {"method": "GET", "route": "/{short_code}", "status_class": "3xx"}
+        )
+        == 2
+    )
+    assert (
+        resources.metrics.get_sample_value(
+            count, {"method": "OTHER", "route": "other", "status_class": "4xx"}
+        )
+        == 1
+    )
+    assert (
+        resources.metrics.get_sample_value(
+            count, {"method": "GET", "route": "/health", "status_class": "5xx"}
+        )
+        == 1
+    )
+    assert (
+        resources.metrics.get_sample_value(
+            "url_shortener_http_request_duration_seconds_sum",
+            {"method": "GET", "route": "/{short_code}", "status_class": "3xx"},
+        )
+        > 0
+    )
+
+
+async def test_http_metrics_count_unhandled_error_once(resources):
+    resources.session.scalar.side_effect = RuntimeError("unexpected")
+    transport = httpx.ASGITransport(app=resources.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.get("/health")).status_code == 500
+
+    assert (
+        resources.metrics.get_sample_value(
+            "url_shortener_http_request_duration_seconds_count",
+            {"method": "GET", "route": "/health", "status_class": "5xx"},
+        )
+        == 1
+    )
 
 
 def link(owner):

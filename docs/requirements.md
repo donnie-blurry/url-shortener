@@ -9,7 +9,8 @@ Redis supplies mapping caching and a Stream queue. Run the API and visit worker
 as separate processes; the same Docker image supports both.
 
 See [apis.md](apis.md), [entities.md](entities.md), and [flows.md](flows.md) for
-contracts, storage, and processing. Cloud deployment and Compose are outside scope.
+contracts, storage, and processing. Docker Compose provides a local stack with
+Prometheus and Grafana. Cloud deployment is outside scope.
 
 ## Functional Requirements
 

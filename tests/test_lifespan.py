@@ -2,8 +2,32 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from prometheus_client import CollectorRegistry
 
+from url_shortener.config import Settings
 from url_shortener.main import create_app
+from url_shortener.metrics import serve_metrics
+
+
+def test_metrics_listener_uses_configured_registry_and_closes(monkeypatch):
+    settings = Settings(
+        database_url="postgresql+psycopg://localhost/shortener",
+        redis_url="redis://localhost/0",
+        metrics_port=9100,
+        _env_file=None,
+    )
+    registry = CollectorRegistry()
+    lifecycle = Mock()
+    start = Mock(return_value=(lifecycle.server, lifecycle.thread))
+    monkeypatch.setattr("url_shortener.metrics.start_http_server", start)
+    with serve_metrics(settings, registry):
+        start.assert_called_once_with(9100, addr="127.0.0.1", registry=registry)
+        assert lifecycle.mock_calls == []
+    assert [call[0] for call in lifecycle.mock_calls] == [
+        "server.shutdown",
+        "server.server_close",
+        "thread.join",
+    ]
 
 
 @pytest.mark.parametrize("failure", [None, "startup", "cleanup"])
@@ -39,7 +63,7 @@ async def test_lifespan_cleans_up_acquired_resources(monkeypatch, failure):
         if failure == "startup"
         else lambda _: queue,
     )
-    settings = SimpleNamespace()
+    settings = SimpleNamespace(metrics_port=None)
     app = create_app(settings)
 
     async def run_lifespan():
