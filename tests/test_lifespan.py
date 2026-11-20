@@ -39,7 +39,7 @@ async def test_lifespan_cleans_up_acquired_resources(monkeypatch, failure):
         if failure == "startup"
         else lambda _: queue,
     )
-    settings = SimpleNamespace(redis_url="redis://localhost:6379/0")
+    settings = SimpleNamespace()
     app = create_app(settings)
 
     async def run_lifespan():

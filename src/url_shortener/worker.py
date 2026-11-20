@@ -11,7 +11,7 @@ from url_shortener.visits.worker import VisitWorker
 async def main() -> None:
     settings = Settings()
     engine, sessions = create_database(settings)
-    queue = create_queue(str(settings.redis_url), read_timeout=5)
+    queue = create_queue(settings, worker=True)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

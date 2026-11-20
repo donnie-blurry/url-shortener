@@ -51,8 +51,12 @@ def test_sequence_values_must_be_positive(number):
 
 async def test_each_submission_allocates_independent_link(session):
     owner = uuid4()
-    first = await create_link(session, "https://example.com", owner)
-    second = await create_link(session, "https://example.com", owner)
+    first = await create_link(
+        session, "https://example.com", owner, max_code_attempts=5
+    )
+    second = await create_link(
+        session, "https://example.com", owner, max_code_attempts=5
+    )
     assert first.short_code != second.short_code
     assert first.owner_id == second.owner_id == owner
     assert first.visit_count == second.visit_count == 0
@@ -64,7 +68,9 @@ async def test_skip_reserved_code(session):
         ALPHABET.index(char) * 62**index for index, char in enumerate(reversed("docs"))
     )
     session.scalar.side_effect = [number, number + 1]
-    link = await create_link(session, "https://example.com", uuid4())
+    link = await create_link(
+        session, "https://example.com", uuid4(), max_code_attempts=5
+    )
     assert link.short_code != "docs"
     assert session.add.call_count == 1
 
@@ -78,25 +84,30 @@ def integrity_error(name="pk_short_links", sqlstate="23505"):
 
 async def test_retry_only_short_code_collision_after_transaction_exit(session):
     session.flush.side_effect = [integrity_error(), None]
-    link = await create_link(session, "https://example.com", uuid4())
+    link = await create_link(
+        session, "https://example.com", uuid4(), max_code_attempts=5
+    )
     assert link.short_code == "2"
     assert session.begin.call_count == 2
     first_exit = session.begin.return_value.__aexit__.await_args_list[0]
     assert first_exit.args[0] is IntegrityError
 
 
-async def test_collision_exhaustion_is_503(session):
+@pytest.mark.parametrize("max_code_attempts", [1, 5])
+async def test_collision_exhaustion_is_503(session, max_code_attempts):
     session.flush.side_effect = integrity_error()
     with pytest.raises(HTTPException) as error:
-        await create_link(session, "https://example.com", uuid4())
+        await create_link(
+            session, "https://example.com", uuid4(), max_code_attempts=max_code_attempts
+        )
     assert error.value.status_code == 503
-    assert session.scalar.await_count == 5
+    assert session.scalar.await_count == max_code_attempts
 
 
 async def test_unrelated_integrity_failure_is_not_retried(session):
     session.flush.side_effect = integrity_error(name="unrelated_constraint")
     with pytest.raises(IntegrityError):
-        await create_link(session, "https://example.com", uuid4())
+        await create_link(session, "https://example.com", uuid4(), max_code_attempts=5)
     assert session.scalar.await_count == 1
 
 
@@ -104,5 +115,5 @@ async def test_code_allocation_failure_is_503(session):
     session.scalar.side_effect = None
     session.scalar.return_value = None
     with pytest.raises(HTTPException) as error:
-        await create_link(session, "https://example.com", uuid4())
+        await create_link(session, "https://example.com", uuid4(), max_code_attempts=5)
     assert error.value.status_code == 503

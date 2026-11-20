@@ -6,19 +6,20 @@ from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 
+from url_shortener.config import Settings
 from url_shortener.links.schemas import CreateLink
 
 logger = logging.getLogger(__name__)
-CACHE_TTL_SECONDS = 3600
 
 
 class MappingCache:
-    def __init__(self, client: Redis) -> None:
+    def __init__(self, client: Redis, *, key_prefix: str, ttl_seconds: int) -> None:
         self.client = client
+        self.key_prefix = key_prefix
+        self.ttl_seconds = ttl_seconds
 
-    @staticmethod
-    def key(code: str) -> str:
-        return f"url-shortener:mapping:{code}"
+    def key(self, code: str) -> str:
+        return f"{self.key_prefix}:mapping:{code}"
 
     async def get(self, code: str) -> str | None:
         try:
@@ -32,7 +33,7 @@ class MappingCache:
 
     async def set(self, code: str, destination: str) -> None:
         try:
-            await self.client.set(self.key(code), destination, ex=CACHE_TTL_SECONDS)
+            await self.client.set(self.key(code), destination, ex=self.ttl_seconds)
         except RedisError:
             logger.warning("Mapping cache write unavailable")
 
@@ -43,13 +44,15 @@ class MappingCache:
             logger.warning("Mapping cache eviction unavailable")
 
 
-def create_cache(url: str) -> MappingCache:
+def create_cache(settings: Settings) -> MappingCache:
     return MappingCache(
         Redis.from_url(
-            url,
+            str(settings.redis_url),
             decode_responses=True,
-            socket_connect_timeout=0.2,
-            socket_timeout=0.2,
+            socket_connect_timeout=settings.redis_connect_timeout_seconds,
+            socket_timeout=settings.redis_cache_timeout_seconds,
             retry=Retry(NoBackoff(), 0),
-        )
+        ),
+        key_prefix=settings.redis_key_prefix,
+        ttl_seconds=settings.cache_ttl_seconds,
     )

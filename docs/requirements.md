@@ -20,7 +20,8 @@ contracts, storage, and processing. Cloud deployment and Compose are outside sco
 - Accept absolute HTTP/HTTPS URLs with a hostname and at most 2,048 characters.
   Validate syntax without contacting the destination; preserve the submitted URL.
 - Enforce uniqueness in PostgreSQL. Generate base62 codes from a shared sequence,
-  skip reserved paths, and retry only code collisions, within five candidate attempts.
+  skip reserved paths, and retry only code collisions within the configurable
+  `MAX_CODE_ATTEMPTS` budget. The default is five candidates.
 - Commit mappings before returning success. Never overwrite or reuse codes.
 
 ### FR-02: Ownership

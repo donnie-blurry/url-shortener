@@ -15,12 +15,7 @@ from sqlmodel import col
 from url_shortener.links.models import ShortLink
 from url_shortener.visits.events import VisitEvent
 from url_shortener.visits.models import Visit
-from url_shortener.visits.queue import (
-    CONSUMER_GROUP,
-    FAILED_STREAM,
-    VISIT_STREAM,
-    VisitQueue,
-)
+from url_shortener.visits.queue import CONSUMER_GROUP, VisitQueue
 
 logger = logging.getLogger(__name__)
 StreamEntry = tuple[bytes, dict[bytes, bytes]]
@@ -36,8 +31,8 @@ class VisitWorker:
 
     async def acknowledge(self, message_id: bytes) -> None:
         async with self.queue.client.pipeline(transaction=True) as pipe:
-            pipe.xack(VISIT_STREAM, CONSUMER_GROUP, message_id)
-            pipe.xdel(VISIT_STREAM, message_id)
+            pipe.xack(self.queue.stream, CONSUMER_GROUP, message_id)
+            pipe.xdel(self.queue.stream, message_id)
             await pipe.execute()
 
     async def quarantine(
@@ -45,15 +40,15 @@ class VisitWorker:
     ) -> None:
         async with self.queue.client.pipeline(transaction=True) as pipe:
             pipe.xadd(
-                FAILED_STREAM,
+                self.queue.failed_stream,
                 {
                     "source_id": message_id,
                     "reason": reason,
                     "payload": fields.get(b"payload", b""),
                 },
             )
-            pipe.xack(VISIT_STREAM, CONSUMER_GROUP, message_id)
-            pipe.xdel(VISIT_STREAM, message_id)
+            pipe.xack(self.queue.stream, CONSUMER_GROUP, message_id)
+            pipe.xdel(self.queue.stream, message_id)
             await pipe.execute()
         logger.warning("Quarantined visit event: %s", reason)
 
@@ -106,7 +101,7 @@ class VisitWorker:
                 if not initialized:
                     try:
                         await self.queue.client.xgroup_create(
-                            VISIT_STREAM,
+                            self.queue.stream,
                             CONSUMER_GROUP,
                             id="0",
                             mkstream=True,
@@ -117,7 +112,7 @@ class VisitWorker:
                     initialized = True
                 if current is None and time.monotonic() >= next_claim:
                     claimed = await self.queue.client.xautoclaim(
-                        VISIT_STREAM,
+                        self.queue.stream,
                         CONSUMER_GROUP,
                         self.consumer,
                         min_idle_time=60_000,
@@ -134,7 +129,7 @@ class VisitWorker:
                         await self.queue.client.xreadgroup(
                             CONSUMER_GROUP,
                             self.consumer,
-                            {VISIT_STREAM: ">"},
+                            {self.queue.stream: ">"},
                             count=1,
                             block=1000,
                         ),

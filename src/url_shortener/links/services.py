@@ -6,16 +6,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from url_shortener.links.codes import MAX_CODE_ATTEMPTS, RESERVED_CODES, encode_code
+from url_shortener.links.codes import RESERVED_CODES, encode_code
 from url_shortener.links.models import ShortLink
 
 SHORT_CODE_SEQUENCE = Sequence("short_code_sequence", start=1)
 
 
 async def create_link(
-    session: AsyncSession, original_url: str, owner_id: UUID
+    session: AsyncSession, original_url: str, owner_id: UUID, *, max_code_attempts: int
 ) -> ShortLink:
-    for _ in range(MAX_CODE_ATTEMPTS):
+    for _ in range(max_code_attempts):
         try:
             async with session.begin():
                 number = await session.scalar(SHORT_CODE_SEQUENCE.next_value())

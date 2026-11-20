@@ -4,16 +4,18 @@
 
 The FastAPI process handles validation, UUID ownership, mapping creation, and
 resolution. A separate worker consumes Redis Stream visit events and persists
-analytics. PostgreSQL owns mappings and processed Visit/counter data. Redis caches
-immutable mappings for one hour and stores queued work in `url-shortener:visits`.
+analytics. PostgreSQL owns mappings and processed Visit/counter data. By default,
+Redis caches immutable mappings for one hour and stores queued work in
+`url-shortener:visits`.
 
-The API uses separate cache and publisher connections with 200 ms connection/read
-timeouts and no automatic retries. Workers use separate Redis connections with a
-five-second read timeout for one-second blocking consumer reads. Each process owns
-an async SQLAlchemy pool and request/task sessions, closing resources at shutdown.
+The API uses separate cache and publisher connections with 200 ms default
+connection/read timeouts and no automatic retries. Workers use separate Redis
+connections with a default five-second read timeout for one-second blocking
+consumer reads. Each process owns an async SQLAlchemy pool and request/task
+sessions, closing resources at shutdown.
 Use READ COMMITTED and pool pre-ping. Pool defaults permit five persistent plus
 ten overflow connections per engine; budget connections across all API and worker
-processes. Connection establishment has a five-second timeout.
+processes. PostgreSQL connection establishment has a default five-second timeout.
 
 ## Redirect availability and freshness
 
@@ -83,7 +85,7 @@ redirect traffic can still generate substantial asynchronous analytics writes.
 Every successful submission creates an independent mapping. PostgreSQL enforces
 uniqueness through the `short_code` primary key, and creation commits the mapping
 before returning it. The application skips reserved names and retries only code
-collisions within a five-candidate budget.
+collisions within the `MAX_CODE_ATTEMPTS` budget, which defaults to five candidates.
 
 ### Short-code allocation trade-offs
 

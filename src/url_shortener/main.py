@@ -20,12 +20,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine, factory = create_database(configuration)
             stack.push_async_callback(engine.dispose)
 
-            cache = create_cache(str(configuration.redis_url))
+            cache = create_cache(configuration)
             stack.push_async_callback(cache.client.aclose)
 
-            queue = create_queue(str(configuration.redis_url))
+            queue = create_queue(configuration)
             stack.push_async_callback(queue.client.aclose)
 
+            application.state.settings = configuration
             application.state.session_factory = factory
             application.state.mapping_cache = cache
             application.state.visit_queue = queue

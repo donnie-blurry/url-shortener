@@ -7,6 +7,7 @@ from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from url_shortener.cache import MappingCache
+from url_shortener.config import Settings
 from url_shortener.visits.queue import VisitQueue
 
 
@@ -52,7 +53,12 @@ async def get_queue(request: Request) -> VisitQueue:
     return cast(VisitQueue, request.app.state.visit_queue)
 
 
+async def get_settings(request: Request) -> Settings:
+    return cast(Settings, request.app.state.settings)
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 OwnerDep = Annotated[UUID, Depends(get_owner_id)]
 CacheDep = Annotated[MappingCache, Depends(get_cache)]
 QueueDep = Annotated[VisitQueue, Depends(get_queue)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]

@@ -3,7 +3,13 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select, text
 from sqlmodel import col
 
-from url_shortener.api.dependencies import CacheDep, OwnerDep, QueueDep, SessionDep
+from url_shortener.api.dependencies import (
+    CacheDep,
+    OwnerDep,
+    QueueDep,
+    SessionDep,
+    SettingsDep,
+)
 from url_shortener.links.models import ShortLink
 from url_shortener.links.schemas import CreateLink, LinkResponse, StatsResponse
 from url_shortener.links.services import create_link, find_link
@@ -20,9 +26,14 @@ async def health(session: SessionDep) -> dict[str, str]:
 
 @router.post("/shorten", response_model=LinkResponse, status_code=201)
 async def shorten(
-    body: CreateLink, session: SessionDep, owner_id: OwnerDep
+    body: CreateLink, session: SessionDep, owner_id: OwnerDep, settings: SettingsDep
 ) -> LinkResponse:
-    link = await create_link(session, body.original_url, owner_id)
+    link = await create_link(
+        session,
+        body.original_url,
+        owner_id,
+        max_code_attempts=settings.max_code_attempts,
+    )
     return LinkResponse.model_validate(link)
 
 

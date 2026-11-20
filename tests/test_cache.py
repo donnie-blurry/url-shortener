@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock
 import pytest
 from redis.exceptions import ConnectionError, TimeoutError
 
-from url_shortener.cache import CACHE_TTL_SECONDS, MappingCache
+from url_shortener.cache import MappingCache
 
 
 @pytest.fixture
 def resources():
     client = SimpleNamespace(get=AsyncMock(), set=AsyncMock(), delete=AsyncMock())
-    return client, MappingCache(client)
+    return client, MappingCache(client, key_prefix="test", ttl_seconds=42)
 
 
 @pytest.mark.parametrize(
@@ -42,6 +42,4 @@ async def test_cache_outage_does_not_escape(resources, error):
 async def test_cache_writes_have_namespace_and_ttl(resources):
     client, cache = resources
     await cache.set("1", "https://example.com")
-    client.set.assert_awaited_once_with(
-        "url-shortener:mapping:1", "https://example.com", ex=CACHE_TTL_SECONDS
-    )
+    client.set.assert_awaited_once_with("test:mapping:1", "https://example.com", ex=42)

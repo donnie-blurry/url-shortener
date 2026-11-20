@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from url_shortener.api.dependencies import get_cache, get_queue, get_session
 from url_shortener.cache import MappingCache
+from url_shortener.config import Settings
 from url_shortener.links.models import ShortLink
 from url_shortener.main import create_app
 from url_shortener.visits.queue import VisitQueue
@@ -43,6 +44,11 @@ def resources():
 
     session.begin.side_effect = Transaction
     state.app = create_app()
+    state.app.state.settings = Settings(
+        database_url="postgresql+psycopg://localhost/shortener",
+        redis_url="redis://localhost/0",
+        _env_file=None,
+    )
 
     async def override_session():
         yield session
@@ -156,10 +162,11 @@ async def test_database_failure_on_cache_miss_is_still_503(client, resources):
 async def test_publish_failure_still_redirects(client, resources, error):
     resources.cache.get.return_value = "https://example.com/page"
     redis = SimpleNamespace(xadd=AsyncMock(side_effect=error("unavailable")))
-    resources.queue = VisitQueue(redis)
+    resources.queue = VisitQueue(redis, stream="test:visits")
     response = await client.get("/1")
     assert response.status_code == 302
     redis.xadd.assert_awaited_once()
+    assert redis.xadd.await_args.args[0] == "test:visits"
     resources.session.add.assert_not_called()
 
 

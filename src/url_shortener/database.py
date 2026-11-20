@@ -15,6 +15,8 @@ def create_database(
         str(settings.database_url),
         pool_pre_ping=True,
         isolation_level="READ COMMITTED",
-        connect_args={"connect_timeout": 5},
+        connect_args={"connect_timeout": settings.database_connect_timeout_seconds},
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
     )
     return engine, async_sessionmaker(engine, expire_on_commit=False)

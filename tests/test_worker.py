@@ -9,14 +9,14 @@ from redis.exceptions import ConnectionError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from url_shortener.visits.events import VisitEvent
-from url_shortener.visits.queue import CONSUMER_GROUP, VISIT_STREAM, VisitQueue
+from url_shortener.visits.queue import CONSUMER_GROUP, VisitQueue
 from url_shortener.visits.worker import VisitWorker
 
 
 @pytest.fixture
 def resources():
     client = MagicMock()
-    queue = VisitQueue(client)
+    queue = VisitQueue(client, stream="test:visits")
     session = MagicMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=False)
@@ -151,11 +151,14 @@ async def test_consumer_reads_new_or_recovers_abandoned_event(resources, recover
     r.worker.process = AsyncMock(side_effect=process)
     await r.worker.run(stop)
     r.client.xgroup_create.assert_awaited_once_with(
-        VISIT_STREAM, CONSUMER_GROUP, id="0", mkstream=True
+        "test:visits", CONSUMER_GROUP, id="0", mkstream=True
     )
+    assert r.client.xautoclaim.await_args.args[0] == "test:visits"
     r.worker.process.assert_awaited_once_with(*entry)
     if recover:
         r.client.xreadgroup.assert_not_awaited()
+    else:
+        assert r.client.xreadgroup.await_args.args[2] == {"test:visits": ">"}
 
 
 async def test_stopped_worker_does_not_consume(resources):
@@ -221,6 +224,6 @@ async def test_ack_and_delete_share_redis_transaction(resources):
     r.client.pipeline.return_value = pipe
     await VisitWorker.acknowledge(r.worker, b"1-0")
     r.client.pipeline.assert_called_once_with(transaction=True)
-    pipe.xack.assert_called_once_with(VISIT_STREAM, CONSUMER_GROUP, b"1-0")
-    pipe.xdel.assert_called_once_with(VISIT_STREAM, b"1-0")
+    pipe.xack.assert_called_once_with("test:visits", CONSUMER_GROUP, b"1-0")
+    pipe.xdel.assert_called_once_with("test:visits", b"1-0")
     pipe.execute.assert_awaited_once()

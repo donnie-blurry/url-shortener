@@ -2,7 +2,6 @@ ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 RESERVED_CODES = frozenset(
     {"health", "shorten", "stats", "docs", "redoc", "openapi.json"}
 )
-MAX_CODE_ATTEMPTS = 5
 
 
 def encode_code(value: int) -> str:

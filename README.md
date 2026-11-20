@@ -18,8 +18,17 @@ uv sync --locked
 cp .env.example .env
 ```
 
-Edit `.env` with your real PostgreSQL and Redis connection URLs. Both are required;
-exported environment variables override `.env`. Never commit credentials.
+Edit `.env` with your real PostgreSQL and Redis connection URLs. Both are required.
+Settings are validated on startup. Exported environment variables override `.env`,
+and `.env.example` lists the optional settings and their defaults. Never commit
+credentials.
+
+Set `REDIS_KEY_PREFIX` to namespace the mapping cache and both visit streams.
+Use the same prefix for the API and workers in each deployment. The default
+preserves the existing keys. When switching prefixes, stop publishers on the old
+prefix and drain its visit stream before switching the workers. The consumer group is
+`visit-writers` within each stream. `REDIS_WORKER_TIMEOUT_SECONDS` must exceed
+the worker's one-second blocking read.
 
 Configure Redis with persistent storage, AOF (`appendonly yes`,
 `appendfsync everysec`), and `maxmemory-policy noeviction`. For a new standalone
@@ -95,12 +104,12 @@ deletion, registration, and login remain outside scope.
 
 ## Queue operations
 
-With your Redis connection URL, inspect:
+Use your Redis connection URL and the deployment's key prefix to inspect queues.
 
 ```sh
-redis-cli -u "$REDIS_URL" XLEN url-shortener:visits
-redis-cli -u "$REDIS_URL" XPENDING url-shortener:visits visit-writers
-redis-cli -u "$REDIS_URL" XRANGE url-shortener:visits:failed - + COUNT 10
+redis-cli -u "$REDIS_URL" XLEN "${REDIS_KEY_PREFIX:-url-shortener}:visits"
+redis-cli -u "$REDIS_URL" XPENDING "${REDIS_KEY_PREFIX:-url-shortener}:visits" visit-writers
+redis-cli -u "$REDIS_URL" XRANGE "${REDIS_KEY_PREFIX:-url-shortener}:visits:failed" - + COUNT 10
 ```
 
 Shell variables must be exported; the shell does not automatically read `.env`.
