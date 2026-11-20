@@ -76,11 +76,52 @@ pressure and persistence policies.
 
 ## Creation and multiple instances
 
-A shared non-cycling PostgreSQL sequence allocates short-code numbers atomically,
-then base62 encodes them. The primary key remains authoritative; skip reserved
-names and retry only that code constraint within five attempts. Failed transactions
-consume sequence values. Gaps and predictable codes are intentional. Never reset
-or allocate the sequence in application memory; every URL submission is independent.
+The API is expected to be read-heavy because links are typically followed more
+often than they are created. Cached redirects avoid PostgreSQL lookups, while
+redirect traffic can still generate substantial asynchronous analytics writes.
+
+Every successful submission creates an independent mapping. PostgreSQL enforces
+uniqueness through the `short_code` primary key, and creation commits the mapping
+before returning it. The application skips reserved names and retries only code
+collisions within a five-candidate budget.
+
+### Short-code allocation trade-offs
+
+- **PostgreSQL sequence (current).** A shared non-cycling sequence gives concurrent
+  API instances distinct numbers. Base62 encoding yields short early codes that
+  are easy to enumerate. Failed transactions can leave gaps. The current path
+  makes a separate `nextval` call before the insert. PostgreSQL already stores the
+  mapping, so it is the only service required for creation.
+- **Redis counter.** A per-link `INCR` moves allocation off PostgreSQL, but creation
+  still makes two sequential calls and now depends on both services. The resulting
+  Base62 codes are still predictable. A Redis crash or failover that rolls back the
+  counter can reissue numbers for committed links. PostgreSQL rejects those
+  collisions, and creation can exhaust its retries until the counter is repaired.
+- **Random Base62.** Generate fixed-length candidates locally with `secrets` and
+  use `INSERT ... ON CONFLICT (short_code) DO NOTHING RETURNING ...`. When the
+  insert returns no row, draw another candidate within the retry budget. This
+  avoids a shared allocator and a separate existence check. Codes are harder to
+  guess and longer than early sequence codes. Seven Base62 characters give about
+  3.52 trillion possibilities. With 10 million occupied codes of that length,
+  about one in 352,000 new draws would collide.
+
+### Batched Redis allocation for higher creation throughput
+
+If sequence allocation becomes a bottleneck as more API instances handle link
+creation, each instance could reserve a disjoint range of 1,000 numbers with a
+single atomic `INCRBY`. It would consume that range locally and reserve another
+when exhausted. This removes per-link PostgreSQL sequence calls and reduces
+contention on the Redis counter compared with per-link `INCR`, since a fully
+consumed range needs one Redis call per 1,000 allocations. Every link still
+requires a PostgreSQL insert and commit. Scaling database write capacity and
+handling analytics contention are separate concerns.
+
+Instance restarts can leave gaps when part of a reserved range goes unused. To
+switch allocators, stop PostgreSQL sequence allocators before initializing the
+Redis counter to at least the sequence's last allocated value. After Redis
+counter loss or rollback, stop all allocators, discard outstanding ranges, and
+reseed the counter above the highest committed code number before resuming.
+PostgreSQL's primary key remains the final uniqueness check.
 
 API and worker instances can scale separately behind a load balancer, sharing
 PostgreSQL and the Stream consumer group. Migrate once before rolling processes.
