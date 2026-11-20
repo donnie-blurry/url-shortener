@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from redis.exceptions import ConnectionError
@@ -30,6 +31,7 @@ def resources():
     worker.acknowledge = AsyncMock()
     worker.quarantine = AsyncMock()
     event = VisitEvent(
+        event_id=uuid4(),
         short_code="1",
         client_ip="192.0.2.1",
         visited_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -160,6 +162,51 @@ async def test_stopped_worker_does_not_consume(resources):
     stop.set()
     await resources.worker.run(stop)
     resources.client.xreadgroup.assert_not_called()
+
+
+async def test_retry_preserves_pending_event_and_backs_off(resources, monkeypatch):
+    r = resources
+    stop = asyncio.Event()
+    delays = []
+
+    async def wait_without_sleep(awaitable, timeout):
+        awaitable.close()
+        delays.append(timeout)
+        raise TimeoutError
+
+    monkeypatch.setattr("url_shortener.worker.asyncio.wait_for", wait_without_sleep)
+    r.client.xgroup_create = AsyncMock()
+    r.client.xautoclaim = AsyncMock(return_value=[b"0-0", [], []])
+    r.client.xreadgroup = AsyncMock(return_value=[(b"stream", [(b"1-0", r.fields)])])
+    attempts = 0
+
+    async def process(*args):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 4:
+            raise SQLAlchemyError("database temporarily unavailable")
+        stop.set()
+
+    r.worker.process = AsyncMock(side_effect=process)
+    await r.worker.run(stop)
+    assert delays == [1, 2, 4]
+    assert r.worker.process.await_count == 4
+    r.client.xreadgroup.assert_awaited_once()
+
+
+async def test_shutdown_during_failed_processing_leaves_pending_event(resources):
+    r = resources
+    stop = asyncio.Event()
+    r.client.xgroup_create = AsyncMock()
+    r.client.xautoclaim = AsyncMock(return_value=[b"0-0", [(b"1-0", r.fields)], []])
+
+    async def fail(*args):
+        stop.set()
+        raise SQLAlchemyError("database unavailable")
+
+    r.worker.process = AsyncMock(side_effect=fail)
+    await r.worker.run(stop)
+    r.worker.acknowledge.assert_not_awaited()
 
 
 async def test_ack_and_delete_share_redis_transaction(resources):

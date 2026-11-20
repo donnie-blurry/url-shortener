@@ -1,18 +1,20 @@
+import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from functools import wraps
-from ipaddress import ip_address
+from uuid import uuid4
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import update
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import col
 
 from url_shortener.cache import MappingCache
-from url_shortener.models import ShortLink, Visit
+from url_shortener.queue import VisitEvent, VisitQueue
 
+logger = logging.getLogger(__name__)
 RedirectHandler = Callable[
-    [str, Request, AsyncSession, MappingCache], Awaitable[RedirectResponse]
+    [str, Request, AsyncSession, MappingCache, VisitQueue], Awaitable[RedirectResponse]
 ]
 
 
@@ -23,34 +25,24 @@ def record_visit(handler: RedirectHandler) -> RedirectHandler:
         request: Request,
         session: AsyncSession,
         cache: MappingCache,
+        queue: VisitQueue,
     ) -> RedirectResponse:
+        visited_at = datetime.now(UTC)
+        response = await handler(short_code, request, session, cache, queue)
+        if request.client is None:
+            logger.warning("Visit skipped because client IP is unavailable")
+            return response
         try:
-            address = ip_address(request.client.host) if request.client else None
-        except ValueError:
-            address = None
-        if address is None:
-            raise HTTPException(503, "Client address unavailable")
-
-        try:
-            async with session.begin():
-                response = await handler(short_code, request, session, cache)
-                result = await session.execute(
-                    update(ShortLink)
-                    .where(col(ShortLink.short_code) == short_code)
-                    .values(visit_count=col(ShortLink.visit_count) + 1)
-                    .returning(col(ShortLink.short_code))
-                )
-                if result.scalar_one_or_none() is None:
-                    raise HTTPException(404, "Short code not found")
-                session.add(Visit(short_code=short_code, client_ip=address))
-                await session.flush()
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                await cache.delete(short_code)
-            raise
-
-        if getattr(request.state, "mapping_cache_missed", False):
-            await cache.set(short_code, request.state.original_destination)
+            event = VisitEvent(
+                event_id=uuid4(),
+                short_code=short_code,
+                client_ip=request.client.host,
+                visited_at=visited_at,
+            )
+        except ValidationError:
+            logger.warning("Visit skipped because request metadata is invalid")
+            return response
+        await queue.publish(event)
         return response
 
     return wrapped

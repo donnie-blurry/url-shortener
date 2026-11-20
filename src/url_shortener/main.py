@@ -16,12 +16,14 @@ from url_shortener.config import Settings
 from url_shortener.database import create_database, get_session
 from url_shortener.identity import get_owner_id
 from url_shortener.models import ShortLink
+from url_shortener.queue import VisitQueue, create_queue, get_queue
 from url_shortener.schemas import CreateLink, LinkResponse, StatsResponse
 from url_shortener.services import create_link, find_link
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 OwnerDep = Annotated[UUID, Depends(get_owner_id)]
 CacheDep = Annotated[MappingCache, Depends(get_cache)]
+QueueDep = Annotated[VisitQueue, Depends(get_queue)]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,13 +32,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configuration = settings if settings is not None else Settings()
         engine, factory = create_database(configuration)
         cache = create_cache(str(configuration.redis_url))
+        queue = create_queue(str(configuration.redis_url))
         application.state.session_factory = factory
         application.state.mapping_cache = cache
+        application.state.visit_queue = queue
         try:
             yield
         finally:
             try:
-                await cache.client.aclose()
+                try:
+                    await cache.client.aclose()
+                finally:
+                    await queue.client.aclose()
             finally:
                 await engine.dispose()
 
@@ -78,20 +85,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         session: SessionDep,
         cache: CacheDep,
+        queue: QueueDep,
     ) -> RedirectResponse:
         destination = await cache.get(short_code)
-        request.state.mapping_cache_missed = destination is None
         if destination is None:
-            destination = (
-                await session.execute(
-                    select(col(ShortLink.original_url)).where(
-                        col(ShortLink.short_code) == short_code
+            async with session.begin():
+                destination = (
+                    await session.execute(
+                        select(col(ShortLink.original_url)).where(
+                            col(ShortLink.short_code) == short_code
+                        )
                     )
-                )
-            ).scalar_one_or_none()
-        if destination is None:
-            raise HTTPException(404, "Short code not found")
-        request.state.original_destination = destination
+                ).scalar_one_or_none()
+            if destination is None:
+                raise HTTPException(404, "Short code not found")
+            await cache.set(short_code, destination)
         return RedirectResponse(
             destination, status_code=302, headers={"Cache-Control": "no-store"}
         )

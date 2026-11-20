@@ -1,8 +1,7 @@
 import logging
-from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import Literal, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import Request
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -20,10 +19,10 @@ CONSUMER_GROUP = "visit-writers"
 class VisitEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     version: Literal[1] = 1
-    event_id: UUID = Field(default_factory=uuid4)
+    event_id: UUID
     short_code: str = Field(pattern=r"^[0-9a-zA-Z]+$", max_length=11)
     client_ip: IPv4Address | IPv6Address
-    visited_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
+    visited_at: AwareDatetime
 
 
 class VisitQueue:
