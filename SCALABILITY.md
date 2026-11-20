@@ -163,6 +163,11 @@ by measurements rather than adding workers without a database connection budget.
 - Batching or sharded aggregates could reduce hot-counter contention; not implemented.
 - A PostgreSQL outbox could improve handoff durability, but restores a redirect-time
   database write. Current behavior explicitly prefers availability and tolerates loss.
+- If the API adds publish retries, Redis 8.6+ `XADD IDMP` can suppress duplicate
+  stream entries after a lost reply. Reuse a stable producer ID and the visit's
+  `event_id` on each retry. Redis tracks those pairs within time and capacity
+  limits. The PostgreSQL `event_id` primary key still prevents double counting
+  on worker redelivery. [Redis Streams idempotency](https://redis.io/docs/latest/develop/data-types/streams/idempotency/)
 - A dedicated durable broker could separate queue persistence from cache operations.
 - Fire-and-forget in-process tasks provide weaker crash recovery than retained Streams.
 - Redis-only counters with periodic flushing require additional reconciliation and
