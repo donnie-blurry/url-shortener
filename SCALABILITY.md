@@ -103,6 +103,29 @@ collisions within the `MAX_CODE_ATTEMPTS` budget, which defaults to five candida
   3.52 trillion possibilities. With 10 million occupied codes of that length,
   about one in 352,000 new draws would collide.
 
+#### Keyed permutation (design option)
+
+Keep the PostgreSQL sequence, encode each value in Base62, and pad it to at least
+six characters before applying [FF1 format-preserving encryption][ff1]. Codes are
+six characters below `62**6` and seven starting at `62**6`, with another character
+added at each subsequent power of 62. Keep leading zeroes in the output. A fixed
+key and tweak map distinct sequence values to distinct codes, making adjacent
+codes harder to predict. The tradeoffs are a new library dependency, longer early
+codes, and a stable secret key shared across API replicas. Key changes can cause
+collisions with issued codes. The database still enforces uniqueness and reserved
+route names are skipped. Codes remain public identifiers.
+
+FF1 adds ten rounds of AES-based computation per candidate on the creation path.
+Redirects and statistics use the stored code directly. Before adopting FF1,
+benchmark six- and seven-character generation with a reused cipher instance on
+the deployment hardware. Multiply mean CPU time per candidate by candidates per
+second, including retries, to estimate CPU cores. For example, an illustrative
+100 µs per candidate at 1,000 candidates/s uses 0.1 core. Also measure p95
+creation latency under load because synchronous encryption shares the API event
+loop with other requests.
+
+[ff1]: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-38G.pdf
+
 ### Batched Redis allocation for higher creation throughput
 
 If sequence allocation becomes a bottleneck as more API instances handle link
