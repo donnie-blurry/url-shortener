@@ -1,136 +1,102 @@
 # API Contracts
 
-This document specifies the intended API for [requirements.md](requirements.md).
-It describes the implemented endpoints.
-Expiration and deletion are outside scope: there is no DELETE endpoint,
-expiration input, or lifecycle-state field.
+These endpoints implement [requirements.md](requirements.md). Deletion and
+expiration are outside scope. Analytics is best effort and processed by a worker.
 
-## Shared Conventions
+## Conventions
 
-- Requests and response bodies use JSON unless stated otherwise.
-- Timestamps use timezone-aware ISO 8601 values in UTC, such as
-  `2026-11-19T12:00:00Z`.
-- Creation and statistics require `X-User-ID`, a UUID identifying the owner.
-  Missing, blank, or malformed UUID values return `422`. Surrounding whitespace
-  is stripped; equivalent UUID representations identify the same owner.
-- The header is trusted without authentication for this iteration. Ownership
-  checks compare UUID values, not their string representations.
-  Identity extraction must be replaceable by future authentication.
-- Redirects and health checks are public.
-- Validation errors return `422` using FastAPI's standard validation-error
-  response. Other documented errors use a JSON `detail` string.
-- Unavailable PostgreSQL or a failed visit-recording operation returns `503`.
-  Redis unavailability alone does not cause a request to fail: use PostgreSQL.
-- Only successful redirect operations record visits; creation, statistics,
-  health checks, and error responses do not.
+- JSON request/response bodies; UTC ISO 8601 timestamps.
+- Creation and statistics require `X-User-ID`, parsed as UUID after trimming
+  whitespace. Missing/blank/malformed values return FastAPI-style `422` errors.
+  Equivalent UUID representations identify the same owner.
+- The header is trusted, not authenticated. Identity verification is deferred.
+- Other errors use a JSON `detail` string. PostgreSQL failures return `503` on
+  operations that require it. Publishing failure alone never fails a redirect.
+- Only resolved redirects publish analytics. Counts represent unique processed
+  events and may lag or permanently omit lost events. No freshness SLA is promised.
 
-## Create a Link
+## POST /shorten
 
-**`POST /shorten`**
-
-Required header:
-
-```http
-X-User-ID: 550e8400-e29b-41d4-a716-446655440000
-```
+Required header: `X-User-ID: 550e8400-e29b-41d4-a716-446655440000`.
 
 Request:
 
 ```json
-{
-  "original_url": "https://example.com/article"
-}
+{"original_url": "https://example.com/article"}
 ```
 
-`original_url` is required, must be an absolute HTTP/HTTPS URL with a hostname,
-and must contain no more than 2,048 characters. Validate syntax without
-contacting the destination. There is no `expires_at` request field.
+Require an absolute HTTP/HTTPS URL with a hostname, maximum 2,048 characters,
+without whitespace/control characters. Reject extra fields. Do not fetch URLs.
 
-Response: **`201 Created`**
+Response: **201 Created**
 
 ```json
 {
-  "short_code": "aB3xY7",
+  "short_code": "1",
   "original_url": "https://example.com/article",
-  "created_at": "2026-11-19T12:00:00Z"
+  "created_at": "2026-11-20T12:00:00Z"
 }
 ```
 
-Every successful request creates a distinct code, including repeated or
-concurrent submissions of the same original URL. Codes are variable-length
-base62 encodings of PostgreSQL sequence values; the example is illustrative.
+Every successful submission creates an independent mapping. Codes are predictable,
+variable-length base62 sequence values, not secrets. Return `422` for invalid
+input and `503` for database failures or code-allocation exhaustion.
 
-| Condition | Status |
-| --- | --- |
-| Mapping committed successfully | `201 Created` |
-| Invalid body, URL, or user-ID header | `422 Unprocessable Content` |
-| Database unavailable or code-generation retries exhausted | `503 Service Unavailable` |
+## GET /{short_code}
 
-## Follow a Link
+Public; no user header or body required. Resolve a trusted cached mapping or fall
+back to PostgreSQL. Cache hits do not access PostgreSQL, including during outages.
 
-**`GET /{short_code}`**
-
-No user-ID header or request body is required.
-
-Response: **`302 Found`**, with no required response-body schema:
+Response: **302 Found**
 
 ```http
 Location: https://example.com/article
 Cache-Control: no-store
 ```
 
-Before returning the redirect, commit the visit log and counter increment
-together. If recording fails, roll back and return an error without redirecting.
-Repeated visits from the same IP count separately. A cache hit does not bypass
-durable visit recording.
+The decorator attempts one event publish before returning. Redis publishing errors,
+missing IP metadata, and a stopped worker do not prevent this response. A timeout
+can mean the event was accepted without its acknowledgement reaching the API.
 
-| Condition | Status |
-| --- | --- |
-| Known code and visit committed | `302 Found` |
-| Unknown code | `404 Not Found` |
-| Database unavailable or visit recording fails | `503 Service Unavailable` |
+Return `404` if neither cache nor database resolves the code. Return `503` when
+PostgreSQL is required for a cache miss but unavailable. A syntactically valid
+cached mapping is trusted even if its database row is absent; such an event will
+be quarantined by the worker. There are no expiration/deletion checks or `410`.
 
-Unknown codes create neither visit logs nor counter increments. There is no
-`410 Gone` response because expiration and deletion are outside scope.
+## GET /stats/{short_code}
 
-## Retrieve Statistics
-
-**`GET /stats/{short_code}`**
-
-Requires `X-User-ID`. No request body.
-
-Response: **`200 OK`**, with `Cache-Control: no-store`:
+Requires owner UUID header. No body. Response: **200 OK**, `Cache-Control: no-store`.
 
 ```json
 {
-  "short_code": "aB3xY7",
+  "short_code": "1",
   "original_url": "https://example.com/article",
   "visit_count": 42,
-  "created_at": "2026-11-19T12:00:00Z"
+  "created_at": "2026-11-20T12:00:00Z"
 }
 ```
 
-Return only to the owner. Read the current committed count from PostgreSQL;
-do not serve stale cached statistics. New links return `visit_count: 0`.
-Individual visit logs and IP addresses are not exposed by this API.
+Read the committed aggregate directly from PostgreSQL, not Redis or a scan of
+Visit rows. New links report zero. Redirects do not immediately change this value;
+workers update it asynchronously. Worker downtime causes lag, and lost events can
+leave permanent undercounts. Do not expose IPs, individual logs, or queue contents.
 
 | Condition | Status |
 | --- | --- |
-| Existing link owned by the requester | `200 OK` |
-| Unknown code | `404 Not Found` |
-| Requester is not the owner | `403 Forbidden` |
-| Missing or invalid user-ID header | `422 Unprocessable Content` |
-| Database unavailable | `503 Service Unavailable` |
+| Known link owned by requester | `200` |
+| Unknown link | `404` |
+| Another owner | `403` |
+| Missing/invalid UUID header | `422` |
+| PostgreSQL unavailable | `503` |
 
-## Health Check
+## GET /health
 
-**`GET /health`** returns **`200 OK`** with:
+Public PostgreSQL readiness check using `SELECT 1`. Return `200 {"status":"OK"}`
+or `503` on database failure. It checks neither Redis nor the worker and emits no
+visit event. Cached redirects may still work while this check returns `503`.
 
-```json
-{"status": "OK"}
-```
+## Worker Interface
 
-This executes `SELECT 1` through a request-scoped session. Database failures
-return `503`; Redis is not checked. It is a PostgreSQL readiness check.
-Static API routes must take precedence over the short-code route; generated
-codes must not conflict with reserved API paths.
+Run separately with `uv run python -m url_shortener.worker`, or override the Docker
+image command with `python -m url_shortener.worker`. There is no worker HTTP API.
+See [flows.md](flows.md) for Stream names, event schema, acknowledgement, and retries.

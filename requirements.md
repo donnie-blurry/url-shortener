@@ -2,106 +2,98 @@
 
 ## Scope and Technology
 
-Deliver a locally runnable URL shortener for the assignment described in
-[Task.md](Task.md). Use Python 3.14, FastAPI, SQLModel with async SQLAlchemy, PostgreSQL, Redis,
-and Alembic. PostgreSQL is the durable source of truth; Redis is a cache.
-Use uv for dependency management and provide an application Dockerfile.
-Cloud deployment and Docker Compose are not required for this iteration.
+Implement [Task.md](Task.md) locally using Python 3.14, FastAPI, SQLModel over
+async SQLAlchemy/Psycopg, PostgreSQL, Redis, and Alembic. Use uv for dependency
+management. PostgreSQL is the source of truth for mappings and processed analytics.
+Redis supplies mapping caching and a Stream queue. Run the API and visit worker
+as separate processes; the same Docker image supports both.
 
-This document records implemented behavior and its acceptance requirements.
-API contracts are documented in [apis.md](apis.md), and the entity model is
-documented in [entities.md](entities.md). Implementation details remain separate.
+See [apis.md](apis.md), [entities.md](entities.md), and [flows.md](flows.md) for
+contracts, storage, and processing. Cloud deployment and Compose are outside scope.
 
 ## Functional Requirements
 
-### FR-01: Create Independently Tracked Links
+### FR-01: Create Independent Links
 
-- Provide `POST /shorten`.
-- Every successful submission creates a new, unique short code, even when
-  another submission has the same original URL or owner.
-- Each link has independent visit statistics and logs.
-- Accept only absolute HTTP/HTTPS URLs with a hostname. Validate syntax without
-  contacting the destination; destination availability is not checked.
-- Limit original URLs to 2,048 characters. No additional destination filtering
-  is required in this iteration.
-- Handle code collisions, including concurrent creation, without overwriting
-  an existing mapping. Permanently reserve codes; never reuse them.
+- `POST /shorten` creates a distinct code for every successful submission, even
+  for the same original URL and owner. Each link has independent statistics.
+- Accept absolute HTTP/HTTPS URLs with a hostname and at most 2,048 characters.
+  Validate syntax without contacting the destination; preserve the submitted URL.
+- Enforce uniqueness in PostgreSQL. Generate base62 codes from a shared sequence,
+  skip reserved paths, and retry only code collisions, within five candidate attempts.
+- Commit mappings before returning success. Never overwrite or reuse codes.
 
-### FR-02: Identify Owners
+### FR-02: Ownership
 
-- Require a trusted, UUID-formatted `X-User-ID` header for creation and statistics.
-- Associate each new link with the supplied UUID, stored as a PostgreSQL UUID.
-- Only the owner may retrieve a link's statistics.
-- Redirects are public and require no user identity.
-- Keep identity extraction replaceable so future authentication can provide
-  a verified user ID without changing ownership rules.
-- Registration, login, and identity verification are outside scope. The trusted
-  header allows impersonation and is a temporary development assumption.
+- Creation and owner-only statistics require a UUID-formatted `X-User-ID` header.
+  Trim surrounding whitespace; compare UUID values rather than strings.
+- Assign ownership from that header; never generate a new owner for a link.
+- Redirects are public. Registration, login, user existence checks, and identity
+  verification remain outside scope. The trusted header permits impersonation
+  and is a temporary boundary replaceable by authentication.
 
-### FR-03: Retain Links and Analytics
+### FR-03: Retention
 
-- Links do not expire and cannot be deleted through the service in this iteration.
-- Retain mappings, ownership, statistics, and all visit logs indefinitely.
-- Expiration, configurable lifetimes, and deletion are explicitly outside scope.
+- Links do not expire and cannot be deleted through this iteration's API.
+- Retain mappings, ownership, processed Visit logs, and statistics indefinitely.
+- Retain failed queue entries for inspection; do not trim unprocessed events.
 
-### FR-04: Redirect and Record Visits
+### FR-04: Best-Effort Redirect Analytics
 
-- Provide `GET /{short_code}` and redirect stored links to their original URLs.
-- Count every successful redirect separately, including repeated requests from
-  the same IP. Count redirects, not unique visitors or destination-page loads.
-- Record the client IP and timestamp for each counted visit.
-- Use the direct client address available to the application for now; trusted
-  proxy configuration and forwarded-header handling are deferred.
-- Unknown links must not redirect or create visit counts or visit logs.
-  Ordinary diagnostic/error logging is unaffected.
-- Implement reusable visit logging through a decorator or middleware rather
-  than duplicating it in endpoint handlers.
+- `GET /{short_code}` resolves Redis mappings first, using PostgreSQL on cache
+  misses or failures. Trust valid cached mappings without a database check.
+- Codes absent from both lookups return `404` without events. A stale cached
+  mapping is trusted for redirecting; the worker rejects missing database mappings.
+- Use a reusable decorator to publish one event per resolved redirect containing
+  a UUID event ID, code, direct client IP, request UTC timestamp, and version.
+- Count repeated requests from the same IP independently; count redirect operations,
+  not destination-page loads or unique visitors.
+- Attempt publishing before returning `302`, but redirect even if Redis publishing
+  fails. Missing/unusable IP metadata skips analytics without blocking the redirect.
+- Queue submission uses a single bounded attempt. A timeout may have an uncertain
+  outcome. Failed publishing or Redis persistence losses can leave visits missing.
+- Keep `Location` and `Cache-Control: no-store`. Creation, statistics, health,
+  and unsuccessful resolution do not publish visit events.
 
-### FR-05: Provide Immediate Statistics
+### FR-05: Background Processing and Eventual Statistics
 
-- Provide owner-only `GET /stats/{short_code}` returning the link's visit count.
-- Keep statistics available to the owner for every stored link.
-- Commit visit recording before returning a redirect. A subsequent statistics
-  request must see the committed visit.
-- Keep the visit log and any separately stored counter consistent in one
-  transaction. On recording failure, roll back and return an error without
-  redirecting.
-- Client receipt of a response is not an additional delivery guarantee; no
-  distributed transaction with the browser is required.
+- Run a separate Redis Streams consumer-group worker. Consume events published
+  before worker startup and recover abandoned pending deliveries.
+- Insert the Visit and atomically increment its ShortLink counter in one database
+  transaction. A unique event ID makes retries and duplicate deliveries no-ops.
+- Preserve the producer's visit timestamp. Acknowledge/delete an event only after
+  commit; database failures leave it pending for retry.
+- Quarantine malformed events and references to absent mappings without modifying
+  counts. Retain quarantine entries for inspection.
+- `GET /stats/{short_code}` returns the owner's current committed processed count
+  directly from PostgreSQL. It may lag indefinitely while workers are unavailable;
+  there is no freshness SLA, and lost events may never appear.
+- Counter/log equality applies to processed unique events, not every redirect.
+  Queue delivery is not exactly once, and client receipt is not a database guarantee.
 
 ## Non-Functional Requirements
 
-- Enforce code uniqueness in PostgreSQL and prevent lost updates during
-  concurrent visits. Document transaction boundaries and isolation choices.
-- Use database connection pooling and properly manage sessions and transactions.
-- Retrieve statistics efficiently and keep redirect/analytics database work small.
-  No numerical latency target or throughput benchmark is required.
-- Fall back to PostgreSQL if Redis is unavailable. Cache failures must not
-  prevent otherwise valid operations, bypass ownership checks, or
-  return stale visit counts that violate immediate statistics.
-- Explain multi-instance operation, campaign traffic spikes, analytics
-  alternatives, and latency/reliability trade-offs in `SCALABILITY.md`.
-  Distinguish implemented measures from proposed future scaling work.
-- Follow `AGENTS.md`: typed, modular code; Ruff and mypy; pytest unit tests with
-  mocked database/cache boundaries. No coverage percentage is required.
+- Use request-scoped sessions, pooled connections, explicit transactions, database
+  uniqueness/foreign keys, and atomic increments to prevent lost updates.
+- Do not hold a database lookup transaction while publishing or filling the cache.
+- Cache hits can redirect during PostgreSQL outages. Cache misses need PostgreSQL;
+  creation/statistics still fail with `503` when PostgreSQL is unavailable.
+- Redis failure does not suppress a successfully resolved redirect; it may lose
+  that request's analytics. Statistics and ownership never use cached counts.
+- Configure queue Redis with persistent storage, AOF (`appendfsync everysec`), and
+  `noeviction`. Persistence loss is still possible; do not silently promise durability
+  beyond the Redis configuration. Application code must not change server settings.
+- Document redirect latency, hot-counter contention, pending-event recovery,
+  deduplication, queue backlog, campaign traffic, and multi-instance trade-offs.
+  No throughput benchmark or numerical latency target is required.
+- Follow `AGENTS.md`: typed modular code, Ruff, mypy, and pytest unit tests using
+  mocked boundaries. No coverage percentage or permanent integration suite is required.
 
-## Deliverables and Acceptance
+## Deliverables and Exclusions
 
-Deliver source code, Alembic migrations, the uv manifest and lockfile, an exported
-`requirements.txt`, local startup instructions, a Dockerfile, unit tests,
-`SCALABILITY.md`, and supporting design documentation.
+Deliver source, migrations, uv manifest/lockfile, exported `requirements.txt`,
+Dockerfile, unit tests, API/worker startup instructions, `SCALABILITY.md`, and
+supporting design and verification records.
 
-Acceptance scenarios must cover independent repeated submissions, ownership,
-URL validation, retained links and analytics,
-permanent code reservation, collision handling, immediate visit recording,
-recording failure without redirect, and Redis failure with PostgreSQL fallback.
-
-## Implementation Decisions and Exclusions
-
-The implementation uses a PostgreSQL sequence encoded as base62, five candidate
-attempts, and a unique code primary key. A decorator records visits in one
-READ COMMITTED transaction. Redis caches mappings for one hour; failures fall
-back to PostgreSQL. Statistics always read PostgreSQL. See entities and flows
-for database types, indexing, and transaction details.
-Registration/login, expiration, deletion, link editing, custom aliases, raw-log
-browsing, and cloud deployment are outside the current scope.
+Authentication, expiration, deletion, link editing, custom aliases, raw-log APIs,
+cloud deployment, Celery/RabbitMQ, and worker batching are outside scope.

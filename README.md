@@ -1,42 +1,63 @@
 # URL Shortener
 
-Python 3.14 / FastAPI / SQLModel application with PostgreSQL storage, immediate
-visit statistics, and best-effort Redis mapping caching.
+Python 3.14 / FastAPI / SQLModel service with PostgreSQL storage, Redis mapping
+caching, and best-effort background visit processing through Redis Streams.
 
 ## Local setup
 
-Install uv and Python 3.14. Create a dedicated PostgreSQL database and role that
-can create tables/sequences, for example through a local PostgreSQL administrator:
+Install uv and Python 3.14. Use PostgreSQL 13+ and Redis 6.2+. Create a dedicated
+PostgreSQL database and role allowed to create tables and sequences:
 
 ```sql
 CREATE ROLE shortener LOGIN PASSWORD 'replace-with-local-password';
 CREATE DATABASE url_shortener OWNER shortener;
 ```
 
-Install dependencies and create local configuration:
-
 ```sh
 uv sync --locked
 cp .env.example .env
 ```
 
-Edit `.env` with your PostgreSQL role/password/database and Redis address.
-`DATABASE_URL` and `REDIS_URL` are required, typed connection URLs. Exported
-environment variables override `.env`; loading settings does not contact services.
-Redis can be unavailable: mapping lookups fall back to PostgreSQL.
+Edit `.env` with your real PostgreSQL and Redis connection URLs. Both are required;
+exported environment variables override `.env`. Never commit credentials.
+
+Configure Redis with persistent storage, AOF (`appendonly yes`,
+`appendfsync everysec`), and `maxmemory-policy noeviction`. For a new standalone
+local Redis process, an example is:
+
+```sh
+redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+```
+
+Do not launch that command over an already-running service; configure that service
+separately if needed. Application code does not change Redis server settings.
+Cache keys have TTLs, but Stream events must not be evicted, expired, or trimmed
+before processing. AOF everysec can still lose recent events after a crash.
+
+## Migrate and run
+
+Stop the old API before applying migration `0002`, which backfills Visit event
+UUIDs and adds a unique non-null constraint. Then run API and worker separately:
 
 ```sh
 uv run alembic upgrade head
 uv run uvicorn url_shortener.main:app --reload --no-proxy-headers
 ```
 
-Run from the repository root. `GET /health` runs PostgreSQL `SELECT 1`, returning
-`200 {"status":"OK"}` or `503` on database failure. It does not check Redis.
-API documentation is available at `/docs`.
+In another terminal, from the repository root:
+
+```sh
+uv run python -m url_shortener.worker
+```
+
+Both processes use the same `.env`. Multiple workers share consumer group
+`visit-writers` with distinct consumer names. SIGINT/SIGTERM stop consumption
+and close resources; abandoned pending events are reclaimable after 60 seconds.
+`GET /health` tests PostgreSQL using `SELECT 1`, not Redis or worker readiness.
+It returns `200 {"status":"OK"}` or `503`; cached redirects may work despite a
+failed database health check. Swagger documentation is at `/docs`.
 
 ## Example requests
-
-Create a link using a temporary trusted user UUID:
 
 ```sh
 curl -i http://127.0.0.1:8000/shorten \
@@ -45,7 +66,7 @@ curl -i http://127.0.0.1:8000/shorten \
   -d '{"original_url":"https://example.com/article"}'
 ```
 
-Use the returned `short_code` below (the first code in a new database is `1`):
+Use the returned code below (`1` is the first allocation in a fresh database):
 
 ```sh
 curl -i http://127.0.0.1:8000/1
@@ -53,20 +74,38 @@ curl -i http://127.0.0.1:8000/stats/1 \
   -H 'X-User-ID: 550e8400-e29b-41d4-a716-446655440000'
 ```
 
-Every creation creates an independent link. Redirects are public and return
-`302` with `Cache-Control: no-store`. Each redirect commits its IP/timestamp log
-and counter increment before returning. Statistics are owner-only and immediate.
-If analytics cannot commit, the request returns `503` without redirecting.
-Unknown codes return `404`, other owners receive `403`, and validation failures
-return `422`. No expiration, deletion, aliases, or user-account endpoints exist.
+Every creation is independent. Public redirects return `302` with `no-store`.
+The decorator attempts to enqueue an event, but publishing failure never blocks
+a resolved redirect. Statistics are owner-only and show **processed visits**:
+counts can lag while workers are stopped, and failed publishing/persistence can
+leave permanent undercounts. Every event that commits is logged and counted in
+one transaction. Replays do not increment again. Unknown lookups return `404`,
+other owners receive `403`, and invalid inputs return `422`.
 
-**The UUID header is not authentication.** Anyone can supply another UUID.
-Real authentication is deliberately deferred. Future verified Google identities
-should map to internal application-user UUIDs. Codes are predictable base62
-sequence values, not secrets. Destination URLs are syntax-validated but not fetched
-or filtered for public-network reachability. All logs, including IPs, are retained.
+**The UUID header is not authentication.** Future verified Google identities
+should map to internal user UUIDs. Codes are predictable, not secrets. URLs are
+syntax-validated without fetching destinations or filtering private addresses.
+Mappings and processed IP/timestamp logs are retained indefinitely. Expiration,
+deletion, registration, and login remain outside scope.
 
-## Checks and migrations
+## Queue operations
+
+With your Redis connection URL, inspect:
+
+```sh
+redis-cli -u "$REDIS_URL" XLEN url-shortener:visits
+redis-cli -u "$REDIS_URL" XPENDING url-shortener:visits visit-writers
+redis-cli -u "$REDIS_URL" XRANGE url-shortener:visits:failed - + COUNT 10
+```
+
+Shell variables must be exported; the shell does not automatically read `.env`.
+The group is created when a worker starts, so XPENDING can report NOGROUP before
+that. Monitor backlog, oldest pending age, publishing failures, retries, and the
+failed stream. Do not manually acknowledge or delete pending messages to clear
+backlog. Failed entries retain their source ID, raw payload, and reason for
+inspection. Repair/replay tooling is outside this iteration.
+
+## Checks and schema changes
 
 ```sh
 uv run pytest
@@ -77,13 +116,12 @@ uv run alembic current
 uv run alembic check
 ```
 
-Automated tests mock database/cache boundaries. They are not a throughput benchmark.
-To change the schema, update SQLModel tables, generate a candidate with
-`uv run alembic revision --autogenerate -m 'Describe schema change'`, review it,
-then apply it. Review standalone sequence changes manually. Do not reset the
-short-code sequence, reuse codes, or call startup `create_all()`.
+Tests mock database/cache/queue boundaries. For schema changes, update models,
+generate a candidate with `uv run alembic revision --autogenerate -m 'Describe change'`,
+review it, and apply it. Review standalone sequence changes manually. Do not reset
+the short-code sequence or use startup `create_all()`.
 
-Regenerate the assignment's production dependency export after dependency changes:
+Export production dependencies after dependency changes:
 
 ```sh
 uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file requirements.txt
@@ -95,41 +133,35 @@ uv export --locked --no-dev --no-emit-project --format requirements.txt --output
 docker build -t url-shortener:local .
 ```
 
-The default base image is `docker.arvancloud.ir/python:3.14-slim` from
-[ArvanCloud's mirror](https://www.arvancloud.ir/fa/dev/docker).
-To use [Hamravesh's mirror](https://hamravesh.com/blog/container-registry-mirroring-and-caching/):
+The default base is `docker.arvancloud.ir/python:3.14-slim`. Hamravesh is also usable:
 
 ```sh
 docker build --build-arg PYTHON_IMAGE=hub.hamdocker.ir/library/python:3.14-slim \
   -t url-shortener:local .
 ```
 
-Supply connection URLs reachable **from inside the container**; container localhost
-is not your host's PostgreSQL or Redis. An ignored `.env.docker` file can contain
-those URLs. On Linux, use `host.docker.internal` with the host-gateway flag below,
-provided your host services accept connections on that interface:
+Supply an ignored `.env.docker` with URLs reachable from inside containers.
+Container localhost is not your host's database. On Linux, for host services
+listening on an appropriate interface, use the host-gateway mapping:
 
 ```sh
 docker run --rm --add-host=host.docker.internal:host-gateway \
   --env-file .env.docker url-shortener:local alembic upgrade head
 docker run --rm --add-host=host.docker.internal:host-gateway \
   --env-file .env.docker -p 127.0.0.1:8000:8000 url-shortener:local
+docker run --rm --add-host=host.docker.internal:host-gateway \
+  --env-file .env.docker url-shortener:local python -m url_shortener.worker
 ```
 
-Migrate once before starting application instances. The image runs as a non-root
-user and excludes local credentials. Do not enable reload in a deployed container.
-Proxy-aware IP extraction is deferred; startup explicitly disables proxy headers.
+Run migration once, then API and worker as separate containers. The same image
+runs both as a non-root user. Credentials are excluded, reload is disabled, and
+proxy-aware IP handling is deferred (`--no-proxy-headers`). No Compose setup is required.
 
 ## Design and submission
 
-- [Task](Task.md): assignment reference.
-- [Requirements](requirements.md), [APIs](apis.md), [entities](entities.md), and
-  [flows](flows.md): implemented design and behavioral guarantees.
-- [Scalability](SCALABILITY.md): transaction rationale, operational risks, and
-  proposed multi-instance/high-traffic architecture.
-
-The submission includes source, migrations, lockfile, `requirements.txt`, Dockerfile,
-unit tests, and supporting documentation. Cloud deployment is outside this iteration.
-
-See [VERIFICATION.md](VERIFICATION.md) for executed checks. The `PYTHON_IMAGE`
-build argument can also select another reachable Python 3.14-slim image.
+[Task.md](Task.md) is the assignment reference. [Requirements](requirements.md),
+[APIs](apis.md), [entities](entities.md), and [flows](flows.md) describe current
+behavior. [SCALABILITY.md](SCALABILITY.md) explains loss/freshness trade-offs and
+[VERIFICATION.md](VERIFICATION.md) records executed checks. The submission includes
+source, migrations, lockfile, production requirements export, Dockerfile, and tests.
+Cloud deployment is outside scope.

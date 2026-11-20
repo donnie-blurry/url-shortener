@@ -2,96 +2,113 @@
 
 ## Implemented architecture
 
-FastAPI uses SQLModel over async SQLAlchemy/Psycopg. PostgreSQL stores mappings,
-UUID ownership, aggregate counts, and every Visit. Redis caches immutable mappings
-under `url-shortener:mapping:{code}` for one hour. Cache connection/read timeouts
-are 200 ms with no automatic retries. Redis errors fall back to PostgreSQL;
-statistics and authorization never use Redis.
+The FastAPI process handles validation, UUID ownership, mapping creation, and
+resolution. A separate worker consumes Redis Stream visit events and persists
+analytics. PostgreSQL owns mappings and processed Visit/counter data. Redis caches
+immutable mappings for one hour and stores queued work in `url-shortener:visits`.
 
-Each worker owns one pooled engine and Redis client, closed at shutdown. Each
-request receives its own session. PostgreSQL uses READ COMMITTED; pool pre-ping
-detects stale connections, and connection establishment has a five-second timeout.
-Pool sizes remain SQLAlchemy defaults (five persistent connections, ten overflow
-connections per engine). These defaults are starting points, not capacity claims.
+The API uses separate cache and publisher connections with 200 ms connection/read
+timeouts and no automatic retries. Workers use separate Redis connections with a
+five-second read timeout for one-second blocking consumer reads. Each process owns
+an async SQLAlchemy pool and request/task sessions, closing resources at shutdown.
+Use READ COMMITTED and pool pre-ping. Pool defaults permit five persistent plus
+ten overflow connections per engine; budget connections across all API and worker
+processes. Connection establishment has a five-second timeout.
 
-## Creation and uniqueness
+## Redirect availability and freshness
 
-A shared non-cycling PostgreSQL sequence allocates numbers atomically. Base62
-encoding makes short, case-sensitive codes without random collisions in normal
-operation. Reserved route names are skipped. The short-code primary key remains
-the final authority; only its uniqueness violation triggers a fresh transaction
-and another candidate, up to five attempts. Other database errors fail directly.
-Sequence values consumed by aborted transactions are not reclaimed. Gaps are
-acceptable, and predictability is an explicit trade-off. Never reset the sequence
-or independently allocate numbers in application memory. Repeated destination
-submissions always create independent mappings and counters.
+A cache hit does not query PostgreSQL. Cache misses close their lookup transaction
+before cache fill/publish operations. The redirect decorator creates a UUID event,
+capturing the request IP/time, and attempts one publish before returning `302`.
+Publishing failure is logged but does not suppress a resolved redirect. Cache
+failures fall back to PostgreSQL; if Redis is also the unavailable broker, that
+request's analytics may be lost. PostgreSQL outages do not prevent cache-hit
+redirects, but creation, statistics, cache misses, and database readiness can fail.
 
-## Redirect transaction and analytics
+Statistics returns the primary database's committed processed counter in one
+lookup, not a Visit scan or a Redis count. It is eventually consistent, with no
+freshness SLA: workers being offline causes unbounded lag, while lost events cause
+permanent undercounting. Receipt of a redirect cannot be atomic with queue publish.
+A publish timeout may have accepted the event, even though the API logs a failure.
 
-A redirect-only decorator opens an explicit transaction around resolution and
-visit recording. It uses a database-side `visit_count = visit_count + 1` update
-and inserts the IP/timestamp Visit in the same transaction. PostgreSQL serializes
-competing updates to the same row, avoiding application-side lost updates. The
-foreign key prevents orphan logs. On error both writes roll back when the
-transaction outcome is known; no redirect is issued. A commit with an uncertain
-outcome is not blindly retried.
+## Worker delivery and database effects
 
-The response is released only after commit. A subsequent statistics request reads
-the current aggregate in one primary-database lookup, without scanning Visit rows.
-Client receipt of a response cannot be made atomic with database commit; a
-connection failure after commit can leave a recorded visit without delivery.
-We count redirect operations, not destination-page loads or unique visitors.
+All workers share consumer group `visit-writers`, created at ID `0` to include
+pre-start events. Each worker reads one event at a time. Every five seconds it
+scans pending work with XAUTOCLAIM, using a 60-second idle threshold. A forced
+process exit leaves unacknowledged work recoverable. SIGTERM/SIGINT finish the
+current attempt when possible, then close resources and stop consumption.
 
-This approach favors durable immediate statistics over redirect availability
-during PostgreSQL outages. Analytics adds database write/commit latency on every
-redirect, even on a cache hit. Keep the transaction small and avoid any destination
-fetch. Redis cannot eliminate hot-counter contention or PostgreSQL write capacity
-limits. No several-thousand-RPS benchmark or numerical latency guarantee is claimed.
+A unique non-null Visit event UUID identifies the logical event across delivery
+attempts. The worker inserts with ON CONFLICT DO NOTHING and increments the
+ShortLink counter only for a new Visit, in the same PostgreSQL transaction.
+Failures roll both changes back. PostgreSQL serializes updates to the same counter,
+preventing lost updates. Replayed events, including commit-before-ack crashes,
+do not increment again. Preserve producer timestamps rather than worker time.
 
-## Multiple instances and campaign traffic
+Commit precedes acknowledgement. XACK and XDEL share a Redis transaction. Database
+or Redis failures retain pending work for retry, with exponential delays from one
+to 30 seconds. Malformed events and missing mappings move to
+`url-shortener:visits:failed`, together with acknowledgement/deletion of the original.
+They do not affect counters and are retained for inspection. Delivery can repeat;
+only database effects for a retained event UUID are deduplicated. Do not claim
+exactly-once delivery or lossless analytics.
 
-The existing shared PostgreSQL sequence, constraints, transactions, and external
-Redis work across application instances. No correctness state belongs in process
-memory. Place a load balancer before stateless application containers and run
-migrations once through a controlled release job before scaling workers.
+Migration `0002` backfills existing visits with UUIDs, enforces uniqueness, and
+preserves counts. Stop old API instances before migration/new worker rollout.
+Do not mix old direct writers with versions requiring explicit event IDs.
 
-Budget total database connections across replicas/workers and migration tooling:
-with current defaults each engine can open up to 15 connections under load.
-Increasing workers without a connection budget can exhaust PostgreSQL. Tune pool
-limits, admission control, and potentially PgBouncer from measured traffic.
-Scale database storage, WAL/I/O, indexes, and backup/recovery procedures alongside
-application capacity; more application replicas cannot fix a single hot counter.
+## Redis persistence and backlog
 
-Before a campaign, observe redirect latency, database pool wait, lock wait,
-transaction failures, cache hit rate, and Redis timeout rates. Warm known popular
-mapping keys, provision headroom, bound request concurrency, and rate-limit abusive
-clients at a gateway. A Redis outage sends lookup traffic back to PostgreSQL;
-cache stampedes and reconnect storms need capacity planning. Future request
-coalescing and TTL jitter can reduce stampedes. Do not cache redirects at a CDN
-while claiming every redirect reaches this service's visit counter.
+Use Redis 6.2+ with persistent storage, AOF (`appendonly yes`, `appendfsync everysec`),
+and `maxmemory-policy noeviction`. Cache entries expire normally, but queued work
+must not be expired or trimmed before processing. AOF everysec can lose recent
+writes on a crash. No eviction does not prevent publishing failure when memory
+is exhausted; the API then redirects without analytics. Streams are not merely
+reconstructible cache data: monitor storage and backups as well as availability.
 
-## Analytics alternatives (not implemented)
+Retaining unprocessed events and failed entries can consume unbounded space during
+outages. Monitor stream length, pending count, oldest pending age, failed-stream
+length, publishing failures, worker retries, processing throughput, and count lag.
+Provision headroom and operational recovery procedures. Cache and queue share Redis
+in this iteration; separating their instances is a future way to isolate memory
+pressure and persistence policies.
 
-- A durable outbox plus workers can move processing off the response path while
-  preserving event delivery, but stats become delayed and outbox writes still
-  involve PostgreSQL. Workers need idempotent processing and duplicate handling.
-- A durable queue/stream can decouple analytics throughput; define enqueue failure,
-  replay, deduplication, backpressure, and visibility delay before adopting it.
-- Background tasks without durable handoff can lose events on process failure.
-- Redis counters with periodic database flushing reduce hot-row writes but create
-  loss, reconciliation, and freshness trade-offs; they violate current semantics
-  unless the requirements change.
-- Append-only logs plus batched/sharded counters can improve hot-link throughput
-  with more complex aggregation and relaxed freshness.
+## Creation and multiple instances
 
-## Retention, identity, and operations
+A shared non-cycling PostgreSQL sequence allocates short-code numbers atomically,
+then base62 encodes them. The primary key remains authoritative; skip reserved
+names and retry only that code constraint within five attempts. Failed transactions
+consume sequence values. Gaps and predictable codes are intentional. Never reset
+or allocate the sequence in application memory; every URL submission is independent.
 
-Unlimited visit retention is implemented. Long-term operation needs storage
-forecasting; partitioning and archival are future options, not silent deletion.
-The trusted UUID header enables impersonation and must be replaced before offering
-real access control. Verified external identity subjects should map to internal
-User UUIDs; do not use mutable email addresses as identifiers. Direct-peer IPs are
-recorded now. Deployment behind proxies needs an explicit trusted-proxy policy.
-Use platform secrets for connection URLs, migrations with least necessary
-privileges, persistent database volumes/backups, and readiness checks against
-PostgreSQL. Redis unavailability should not alone remove application instances.
+API and worker instances can scale separately behind a load balancer, sharing
+PostgreSQL and the Stream consumer group. Migrate once before rolling processes.
+More workers improve distinct-link throughput but do not remove hot-row contention
+when a campaign targets one link. Database I/O/WAL, pool waits, lock contention,
+and unbounded visit-log growth remain capacity limits. No thousands-RPS benchmark
+or numerical latency guarantee is claimed.
+
+Before a campaign, prewarm common mappings, provision API/worker/Redis/PostgreSQL
+capacity, measure queue lag, and bound concurrency. A cache outage increases
+PostgreSQL lookup traffic; TTL jitter and request coalescing are future stampede
+controls. Avoid CDN redirect caching if the goal is to observe every redirect at
+this service. Gateway admission control/rate limits and PgBouncer may be justified
+by measurements rather than adding workers without a database connection budget.
+
+## Alternatives and limits
+
+- Batching or sharded aggregates could reduce hot-counter contention; not implemented.
+- A PostgreSQL outbox could improve handoff durability, but restores a redirect-time
+  database write. Current behavior explicitly prefers availability and tolerates loss.
+- A dedicated durable broker could separate queue persistence from cache operations.
+- Fire-and-forget in-process tasks provide weaker crash recovery than retained Streams.
+- Redis-only counters with periodic flushing require additional reconciliation and
+  loss semantics; current counts remain PostgreSQL transaction results.
+
+Processed logs and mappings are retained indefinitely. Partitioning/archival and
+queue repair tools are future work. Trusted UUID headers enable impersonation;
+authentication must eventually map verified external subjects to internal user
+UUIDs. Direct-peer IPs are captured now; trusted proxy handling is deferred.
+Use platform secrets and persistent PostgreSQL backups. `/health` remains a database
+readiness check, not a measure of cached redirect or worker availability.
