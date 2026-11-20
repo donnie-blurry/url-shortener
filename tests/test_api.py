@@ -10,11 +10,11 @@ from redis.exceptions import ConnectionError, TimeoutError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from url_shortener.cache import MappingCache, get_cache
-from url_shortener.database import get_session
+from url_shortener.api.dependencies import get_cache, get_queue, get_session
+from url_shortener.cache import MappingCache
+from url_shortener.links.models import ShortLink
 from url_shortener.main import create_app
-from url_shortener.models import ShortLink
-from url_shortener.queue import VisitQueue, get_queue
+from url_shortener.visits.queue import VisitQueue
 
 
 @pytest.fixture

@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from url_shortener.config import Settings
-from url_shortener.models import ShortLink, Visit  # noqa: F401
+from url_shortener.links.models import ShortLink  # noqa: F401
+from url_shortener.visits.models import Visit  # noqa: F401
 
 config = context.config
 config.set_main_option(

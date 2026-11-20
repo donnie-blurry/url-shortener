@@ -7,8 +7,8 @@ import pytest
 from fastapi import Depends, FastAPI
 from pydantic import ValidationError
 
-from url_shortener.identity import get_owner_id
-from url_shortener.schemas import CreateLink, LinkResponse
+from url_shortener.api.dependencies import get_owner_id
+from url_shortener.links.schemas import CreateLink, LinkResponse
 
 
 @pytest.mark.parametrize(

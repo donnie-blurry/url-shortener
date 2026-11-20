@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from url_shortener.codes import ALPHABET, encode_code
-from url_shortener.services import create_link
+from url_shortener.links.codes import ALPHABET, encode_code
+from url_shortener.links.services import create_link
 
 
 @pytest.fixture

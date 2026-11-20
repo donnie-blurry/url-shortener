@@ -6,8 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from url_shortener.codes import MAX_CODE_ATTEMPTS, RESERVED_CODES, encode_code
-from url_shortener.models import ShortLink
+from url_shortener.links.codes import MAX_CODE_ATTEMPTS, RESERVED_CODES, encode_code
+from url_shortener.links.models import ShortLink
 
 SHORT_CODE_SEQUENCE = Sequence("short_code_sequence", start=1)
 

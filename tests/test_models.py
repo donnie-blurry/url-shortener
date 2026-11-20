@@ -4,7 +4,8 @@ from sqlalchemy import BigInteger, CheckConstraint
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel
 
-from url_shortener.models import ShortLink, Visit
+from url_shortener.links.models import ShortLink
+from url_shortener.visits.models import Visit
 
 
 def test_schema_preserves_uuid_ownership_and_independent_urls():

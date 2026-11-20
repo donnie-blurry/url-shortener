@@ -10,7 +10,8 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from url_shortener.cache import MappingCache
-from url_shortener.queue import VisitEvent, VisitQueue
+from url_shortener.visits.events import VisitEvent
+from url_shortener.visits.queue import VisitQueue
 
 logger = logging.getLogger(__name__)
 RedirectHandler = Callable[

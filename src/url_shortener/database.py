@@ -1,7 +1,3 @@
-from collections.abc import AsyncIterator
-from typing import cast
-
-from fastapi import Request
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -22,9 +18,3 @@ def create_database(
         connect_args={"connect_timeout": 5},
     )
     return engine, async_sessionmaker(engine, expire_on_commit=False)
-
-
-async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
-    factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
-    async with factory() as session:
-        yield session

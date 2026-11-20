@@ -8,8 +8,9 @@ import pytest
 from redis.exceptions import ConnectionError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from url_shortener.queue import CONSUMER_GROUP, VISIT_STREAM, VisitEvent, VisitQueue
-from url_shortener.worker import VisitWorker
+from url_shortener.visits.events import VisitEvent
+from url_shortener.visits.queue import CONSUMER_GROUP, VISIT_STREAM, VisitQueue
+from url_shortener.visits.worker import VisitWorker
 
 
 @pytest.fixture
@@ -174,7 +175,9 @@ async def test_retry_preserves_pending_event_and_backs_off(resources, monkeypatc
         delays.append(timeout)
         raise TimeoutError
 
-    monkeypatch.setattr("url_shortener.worker.asyncio.wait_for", wait_without_sleep)
+    monkeypatch.setattr(
+        "url_shortener.visits.worker.asyncio.wait_for", wait_without_sleep
+    )
     r.client.xgroup_create = AsyncMock()
     r.client.xautoclaim = AsyncMock(return_value=[b"0-0", [], []])
     r.client.xreadgroup = AsyncMock(return_value=[(b"stream", [(b"1-0", r.fields)])])

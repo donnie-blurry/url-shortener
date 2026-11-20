@@ -1,14 +1,12 @@
 import logging
-from typing import cast
 
-from fastapi import Request
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 
-from url_shortener.schemas import CreateLink
+from url_shortener.links.schemas import CreateLink
 
 logger = logging.getLogger(__name__)
 CACHE_TTL_SECONDS = 3600
@@ -55,7 +53,3 @@ def create_cache(url: str) -> MappingCache:
             retry=Retry(NoBackoff(), 0),
         )
     )
-
-
-async def get_cache(request: Request) -> MappingCache:
-    return cast(MappingCache, request.app.state.mapping_cache)
