@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -16,22 +16,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         configuration = settings if settings is not None else Settings()
-        engine, factory = create_database(configuration)
-        cache = create_cache(str(configuration.redis_url))
-        queue = create_queue(str(configuration.redis_url))
-        application.state.session_factory = factory
-        application.state.mapping_cache = cache
-        application.state.visit_queue = queue
-        try:
+        async with AsyncExitStack() as stack:
+            engine, factory = create_database(configuration)
+            stack.push_async_callback(engine.dispose)
+
+            cache = create_cache(str(configuration.redis_url))
+            stack.push_async_callback(cache.client.aclose)
+
+            queue = create_queue(str(configuration.redis_url))
+            stack.push_async_callback(queue.client.aclose)
+
+            application.state.session_factory = factory
+            application.state.mapping_cache = cache
+            application.state.visit_queue = queue
             yield
-        finally:
-            try:
-                try:
-                    await cache.client.aclose()
-                finally:
-                    await queue.client.aclose()
-            finally:
-                await engine.dispose()
 
     application = FastAPI(title="URL Shortener", lifespan=lifespan)
 
