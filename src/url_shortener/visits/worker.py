@@ -60,25 +60,7 @@ class VisitWorker:
             return
 
         try:
-            async with self.sessions() as session:
-                async with session.begin():
-                    result = await session.execute(
-                        insert(Visit)
-                        .values(
-                            event_id=event.event_id,
-                            short_code=event.short_code,
-                            client_ip=event.client_ip,
-                            visited_at=event.visited_at,
-                        )
-                        .on_conflict_do_nothing(index_elements=[col(Visit.event_id)])
-                        .returning(col(Visit.event_id))
-                    )
-                    if result.scalar_one_or_none() is not None:
-                        await session.execute(
-                            update(ShortLink)
-                            .where(col(ShortLink.short_code) == event.short_code)
-                            .values(visit_count=col(ShortLink.visit_count) + 1)
-                        )
+            await self._persist_visit(event)
         except IntegrityError as exc:
             if (
                 getattr(exc.orig, "sqlstate", None) == "23503"
@@ -99,44 +81,15 @@ class VisitWorker:
         while not stop.is_set():
             try:
                 if not initialized:
-                    try:
-                        await self.queue.client.xgroup_create(
-                            self.queue.stream,
-                            CONSUMER_GROUP,
-                            id="0",
-                            mkstream=True,
-                        )
-                    except ResponseError as exc:
-                        if not str(exc).startswith("BUSYGROUP"):
-                            raise
+                    await self._ensure_consumer_group()
                     initialized = True
                 if current is None and time.monotonic() >= next_claim:
-                    claimed = await self.queue.client.xautoclaim(
-                        self.queue.stream,
-                        CONSUMER_GROUP,
-                        self.consumer,
-                        min_idle_time=60_000,
-                        start_id=claim_cursor,
-                        count=1,
-                    )
-                    claim_cursor = claimed[0]
-                    if claimed[1]:
-                        current = claimed[1][0]
+                    claim_cursor, current = await self._claim_pending(claim_cursor)
                     next_claim = time.monotonic() + 5
                 if current is None:
-                    messages = cast(
-                        list[tuple[bytes, list[StreamEntry]]],
-                        await self.queue.client.xreadgroup(
-                            CONSUMER_GROUP,
-                            self.consumer,
-                            {self.queue.stream: ">"},
-                            count=1,
-                            block=1000,
-                        ),
-                    )
-                    if not messages:
-                        continue
-                    current = messages[0][1][0]
+                    current = await self._read_new_message()
+                if current is None:
+                    continue
                 await self.process(*current)
                 current = None
                 delay = 1.0
@@ -151,3 +104,57 @@ class VisitWorker:
                 except TimeoutError:
                     pass
                 delay = min(delay * 2, 30)
+
+    async def _ensure_consumer_group(self) -> None:
+        try:
+            await self.queue.client.xgroup_create(
+                self.queue.stream, CONSUMER_GROUP, id="0", mkstream=True
+            )
+        except ResponseError as exc:
+            if not str(exc).startswith("BUSYGROUP"):
+                raise
+
+    async def _claim_pending(self, cursor: bytes) -> tuple[bytes, StreamEntry | None]:
+        claimed = await self.queue.client.xautoclaim(
+            self.queue.stream,
+            CONSUMER_GROUP,
+            self.consumer,
+            min_idle_time=60_000,
+            start_id=cursor,
+            count=1,
+        )
+        next_cursor, entries = claimed[0], claimed[1]
+        return next_cursor, entries[0] if entries else None
+
+    async def _read_new_message(self) -> StreamEntry | None:
+        messages = cast(
+            list[tuple[bytes, list[StreamEntry]]],
+            await self.queue.client.xreadgroup(
+                CONSUMER_GROUP,
+                self.consumer,
+                {self.queue.stream: ">"},
+                count=1,
+                block=1000,
+            ),
+        )
+        return messages[0][1][0] if messages else None
+
+    async def _persist_visit(self, event: VisitEvent) -> None:
+        async with self.sessions() as session, session.begin():
+            result = await session.execute(
+                insert(Visit)
+                .values(
+                    event_id=event.event_id,
+                    short_code=event.short_code,
+                    client_ip=event.client_ip,
+                    visited_at=event.visited_at,
+                )
+                .on_conflict_do_nothing(index_elements=[col(Visit.event_id)])
+                .returning(col(Visit.event_id))
+            )
+            if result.scalar_one_or_none() is not None:
+                await session.execute(
+                    update(ShortLink)
+                    .where(col(ShortLink.short_code) == event.short_code)
+                    .values(visit_count=col(ShortLink.visit_count) + 1)
+                )
